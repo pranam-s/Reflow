@@ -249,3 +249,48 @@ checks 3.13. Pinning it meant the 3.13 job was never really checking 3.13. Also 
 **Why it is worth recording.** A single-version CI would have shipped this silently, and the repo's
 whole promise is that a reviewer can clone it and have everything work. This is the matrix paying for
 itself on its first real disagreement.
+
+### Gemini 3.7 Flash cannot turn reasoning off, and it changes the model economics
+
+**What.** The plan named `google/gemini-3.7-flash` as the shipped default for the diagnosis tier, on the
+grounds that it is the recognisable, credible choice. Smoke-testing structured output before Phase 4
+showed that assumption was expensive.
+
+**Evidence.** Requesting `reasoning: {"enabled": false}` returns
+`400 "Reasoning is mandatory for this endpoint and cannot be disabled."` Left enabled, a single
+one-sentence diagnosis consumed **364 of 385 completion tokens on reasoning**, cost $0.00077, and still
+truncated the JSON mid-object at `max_tokens: 400`. The same request against
+`deepseek/deepseek-v4-flash` with reasoning disabled returned complete, valid structured output in 330
+tokens for **$0.0000378 — roughly 20x cheaper**.
+
+**Consequence.** No default is being pre-committed. The client stays provider-agnostic with the model
+selected by config, and the Phase 7 benchmark picks the default on evidence, the same way the clustering
+bake-off did. Two hard constraints fall out for Phase 4: `max_tokens` must be generous enough to survive
+reasoning overhead on models that mandate it, and truncated JSON must be treated as a retryable failure
+rather than a crash. `json_schema` structured output itself works on both models, so the diagnosis
+contract is safe either way.
+
+### The winning burst detector won because the test split was quieter, not because it was better
+
+**What.** Phase 3's pre-committed selection rule was highest test-split F1. By that rule
+`fixed_threshold` won outright with F1 1.000, against `poisson_surprise` at 0.640.
+
+**Evidence.** Its train-split precision collapses to 0.264 — 159 detections against 42 true windows.
+Independent verification found the mechanism, and it is systematic rather than small-sample chance.
+Both splits cover the **same 720 hours across the same 72 `(method, bank)` entities**, but the split
+assigns 42 of 50 windows and about 80% of background traffic to train, leaving test **four times
+sparser**: 55.7 vs 13.8 events per hour. Per-bucket counts follow — train p90=2, p99=17; test p90=1,
+p99=4 — against a fixed threshold of **3**. On train that sits below the noise floor; on test it sits
+above it.
+
+**Consequence.** An absolute count threshold is scale-dependent by construction: its accuracy tracks
+merchant volume rather than anything it detects, and it would degrade on any merchant busier than the
+test slice. `poisson_surprise` normalises against a trailing rate, is scale-invariant, and its two
+splits agree to 0.022 — so it is recommended for production **despite losing the mechanical rule**.
+ADR-0003 records both the rule's verdict and the reason for overriding it.
+
+**Why it is worth recording.** A pre-committed selection rule is supposed to stop you rationalising
+after the fact. Here the rule itself was flawed, because selecting on an 8-window test split has almost
+no statistical power. Following it blindly would have shipped a detector that fails on busy merchants;
+overriding it silently would have made the pre-commitment theatre. Reporting both is the only honest
+option.
