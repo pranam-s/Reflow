@@ -58,6 +58,8 @@ from reflow.corpus.events import PaymentEvent, build_event
 from reflow.corpus.methods import sample_method, sample_upi_flow
 from reflow.corpus.reasons import (
     CATCH_ALL_REASONS,
+    MIN_VARIANT_RICHNESS,
+    max_variant_richness,
     reason_pool_for_method,
     unique_reason_records,
     zipf_weights,
@@ -223,6 +225,7 @@ def _event_stream(
     remediation_by_reason: dict[str, RemediationClass | None],
     customer_pool: list[str],
     outlier_keys: frozenset[tuple[PaymentMethod, str]],
+    variant_richness: int | None = None,
 ) -> Iterator[PaymentEvent]:
     """Lazily build one :class:`PaymentEvent` per scheduled slot.
 
@@ -235,6 +238,8 @@ def _event_stream(
         customer_pool: Fixed pool of synthetic customer ids to draw from.
         outlier_keys: ``(method, reason)`` pairs to tag ``is_outlier=True``,
             from :func:`_compute_outlier_keys`.
+        variant_richness: Forwarded to :func:`reflow.corpus.events.build_event`
+            for every slot.
 
     Yields:
         One :class:`PaymentEvent` per slot, in chronological order, with
@@ -271,6 +276,7 @@ def _event_stream(
             forced_bank=slot.forced_bank,
             forced_order_id=order_id,
             is_outlier=(slot.method, slot.reason) in outlier_keys,
+            variant_richness=variant_richness,
         )
 
 
@@ -278,23 +284,44 @@ def generate_corpus(
     seed: int,
     n_events: int = DEFAULT_N_EVENTS,
     reason_records: list[ReasonRecord] | None = None,
+    variant_richness: int | None = None,
 ) -> Iterator[PaymentEvent]:
     """Generate a deterministic, streaming synthetic failed-payment corpus.
 
     Args:
         seed: Seed for the single :class:`random.Random` instance driving
-            every random decision in this corpus. Identical ``seed`` and
-            ``n_events`` reproduce a byte-identical event sequence.
+            every random decision in this corpus. Identical ``seed``,
+            ``n_events``, and ``variant_richness`` reproduce a
+            byte-identical event sequence.
         n_events: Total number of events to generate.
         reason_records: Pre-parsed reason records, mainly for tests that
             want to avoid re-parsing the vendored spreadsheet on every
             call. Defaults to parsing
             ``data/razorpay_error_reasons.xlsx`` from the repository root.
+        variant_richness: The Phase 1b surface-variation richness level:
+            the number of distinct surface wordings made available per
+            latent sub-cause of a catch-all reason (see
+            :mod:`reflow.corpus.reasons` module docstring). ``None`` (the
+            default) reproduces pre-Phase-1b rendering exactly -- the
+            pre-existing binary ``paraphrase`` mechanism, present for only
+            some sub-causes. An explicit level must be between
+            :data:`reflow.corpus.reasons.MIN_VARIANT_RICHNESS` and
+            :func:`reflow.corpus.reasons.max_variant_richness` inclusive;
+            :data:`reflow.corpus.reasons.SUPPORTED_VARIANT_RICHNESS_LEVELS`
+            names the levels (1, 3, 5) the Phase 1b addendum requires the
+            evaluation to sweep. Narrow (non-catch-all) reasons are
+            unaffected at every level.
 
     Yields:
         ``n_events`` :class:`~reflow.corpus.events.PaymentEvent`, in
         chronological order by ``created_at``, each with ``split`` set to
         ``"train"`` or ``"test"``.
+
+    Raises:
+        ValueError: If ``variant_richness`` is given but falls outside
+            ``[MIN_VARIANT_RICHNESS, max_variant_richness()]``. Validated
+            up front so a bad value fails immediately rather than only
+            when a catch-all reason happens to be drawn.
 
     Note:
         Uses :class:`random.Random`, which ruff's ``S311`` rule flags as
@@ -303,6 +330,14 @@ def generate_corpus(
         not a security-sensitive context -- reproducibility from a seeded
         PRNG is the entire point.
     """
+    if variant_richness is not None and not (
+        MIN_VARIANT_RICHNESS <= variant_richness <= max_variant_richness()
+    ):
+        raise ValueError(
+            f"variant_richness must be between {MIN_VARIANT_RICHNESS} and "
+            f"{max_variant_richness()}, got {variant_richness}."
+        )
+
     if n_events <= 0:
         return
 
@@ -323,6 +358,12 @@ def generate_corpus(
     customer_pool = [random_id(rng, "cust") for _ in range(customer_pool_size)]
 
     events = _event_stream(
-        rng, slots, record_by_reason, remediation_by_reason, customer_pool, outlier_keys
+        rng,
+        slots,
+        record_by_reason,
+        remediation_by_reason,
+        customer_pool,
+        outlier_keys,
+        variant_richness,
     )
     yield from assign_splits(rng, events, windows)

@@ -11,10 +11,14 @@ from reflow.corpus.reasons import (
     CARDLESS_EMI_ONLY,
     CATCH_ALL_REASONS,
     CATCH_ALL_SUBCAUSES,
+    MIN_VARIANT_RICHNESS,
+    SUPPORTED_VARIANT_RICHNESS_LEVELS,
     UPI_ONLY,
     WALLET_ONLY,
     generic_reasons,
+    max_variant_richness,
     reason_pool_for_method,
+    subcause_wordings,
     unique_reason_records,
     zipf_weights,
 )
@@ -108,3 +112,68 @@ def test_zipf_weights_sum_to_one_and_decrease() -> None:
 
 def test_zipf_weights_single_item_is_certain() -> None:
     assert zipf_weights(1) == [1.0]
+
+
+_ALL_SUBCAUSES = [subcause for subcauses in CATCH_ALL_SUBCAUSES.values() for subcause in subcauses]
+
+
+def test_max_variant_richness_is_five() -> None:
+    assert max_variant_richness() == 5
+
+
+def test_supported_variant_richness_levels_are_within_bounds() -> None:
+    for level in SUPPORTED_VARIANT_RICHNESS_LEVELS:
+        assert MIN_VARIANT_RICHNESS <= level <= max_variant_richness()
+
+
+@pytest.mark.parametrize("subcause", _ALL_SUBCAUSES, ids=lambda s: s.subcause_id)
+def test_every_latent_subcause_has_four_authored_variants(subcause) -> None:
+    assert len(subcause.variants) == 4
+    labels = {variant.label for variant in subcause.variants}
+    assert labels == {
+        "paraphrase_wording",
+        "paraphrase_reordered",
+        "paraphrase_verbose",
+        "paraphrase_terse",
+    }
+
+
+@pytest.mark.parametrize("subcause", _ALL_SUBCAUSES, ids=lambda s: s.subcause_id)
+def test_every_latent_subcause_variant_text_is_distinct(subcause) -> None:
+    texts = [subcause.template, *(variant.text for variant in subcause.variants)]
+    assert len(texts) == len(set(texts))
+
+
+def test_subcause_wordings_richness_one_is_canonical_only() -> None:
+    subcause = _ALL_SUBCAUSES[0]
+    pairs = subcause_wordings(subcause, 1)
+    assert pairs == ((subcause.template, "canonical"),)
+
+
+def test_subcause_wordings_richness_three_adds_two_alternates() -> None:
+    subcause = _ALL_SUBCAUSES[0]
+    pairs = subcause_wordings(subcause, 3)
+    assert len(pairs) == 3
+    assert pairs[0] == (subcause.template, "canonical")
+    assert pairs[1] == (subcause.variants[0].text, subcause.variants[0].label)
+    assert pairs[2] == (subcause.variants[1].text, subcause.variants[1].label)
+
+
+def test_subcause_wordings_richness_five_adds_all_four_alternates() -> None:
+    subcause = _ALL_SUBCAUSES[0]
+    pairs = subcause_wordings(subcause, 5)
+    assert len(pairs) == 5
+    expected = ((subcause.template, "canonical"), *((v.text, v.label) for v in subcause.variants))
+    assert pairs == expected
+
+
+@pytest.mark.parametrize("richness", [0, -1])
+def test_subcause_wordings_rejects_richness_below_minimum(richness: int) -> None:
+    with pytest.raises(ValueError, match="variant_richness"):
+        subcause_wordings(_ALL_SUBCAUSES[0], richness)
+
+
+def test_subcause_wordings_rejects_richness_above_available() -> None:
+    subcause = _ALL_SUBCAUSES[0]
+    with pytest.raises(ValueError, match="variant_richness"):
+        subcause_wordings(subcause, len(subcause.variants) + 2)

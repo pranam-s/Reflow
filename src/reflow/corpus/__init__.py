@@ -21,7 +21,11 @@ from reflow.corpus.methods import METHOD_MIX, UPI_FLOW_MIX, sample_method, sampl
 from reflow.corpus.reasons import (
     CATCH_ALL_REASONS,
     CATCH_ALL_SUBCAUSES,
+    MIN_VARIANT_RICHNESS,
+    SUPPORTED_VARIANT_RICHNESS_LEVELS,
     LatentSubcause,
+    max_variant_richness,
+    subcause_wordings,
 )
 from reflow.corpus.split import TEST, TRAIN, assign_splits
 
@@ -30,6 +34,8 @@ __all__ = [
     "CATCH_ALL_SUBCAUSES",
     "DEFAULT_N_EVENTS",
     "METHOD_MIX",
+    "MIN_VARIANT_RICHNESS",
+    "SUPPORTED_VARIANT_RICHNESS_LEVELS",
     "TEST",
     "TRAIN",
     "UPI_FLOW_MIX",
@@ -40,6 +46,8 @@ __all__ = [
     "build_event",
     "generate_corpus",
     "generate_downtime_windows",
+    "max_variant_richness",
     "sample_method",
     "sample_upi_flow",
+    "subcause_wordings",
 ]

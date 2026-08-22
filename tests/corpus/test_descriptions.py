@@ -1,7 +1,10 @@
 """Tests for reflow.corpus.descriptions."""
 
+import itertools
 import random
 from datetime import datetime
+
+import pytest
 
 from reflow.corpus.descriptions import (
     generate_noise_tokens,
@@ -10,6 +13,8 @@ from reflow.corpus.descriptions import (
 )
 from reflow.corpus.reasons import CATCH_ALL_SUBCAUSES, NARROW_REASON_ALT_PHRASINGS
 from reflow.taxonomy.methods import PaymentMethod
+
+_A_SUBCAUSE = next(subcause for subcauses in CATCH_ALL_SUBCAUSES.values() for subcause in subcauses)
 
 
 def test_generate_noise_tokens_reuses_created_at_and_amount() -> None:
@@ -99,3 +104,76 @@ def test_render_subcause_description_can_select_paraphrase() -> None:
     assert "canonical" in seen_variants
     assert paraphrased_subcause.paraphrase is not None
     assert paraphrased_subcause.paraphrase.label in seen_variants
+
+
+def test_render_subcause_description_richness_one_is_always_canonical() -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    for seed in range(200):
+        rendered, variant = render_subcause_description(
+            _A_SUBCAUSE, noise, random.Random(seed), variant_richness=1
+        )
+        assert variant == "canonical"
+        assert rendered == _A_SUBCAUSE.template.format_map(noise.as_format_mapping())
+
+
+def test_render_subcause_description_richness_three_uses_exactly_three_labels() -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    seen = set()
+    for seed in range(500):
+        _, variant = render_subcause_description(
+            _A_SUBCAUSE, noise, random.Random(seed), variant_richness=3
+        )
+        seen.add(variant)
+    assert seen == {"canonical", "paraphrase_wording", "paraphrase_reordered"}
+
+
+def test_render_subcause_description_richness_five_uses_all_five_labels() -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    seen = set()
+    for seed in range(2000):
+        _, variant = render_subcause_description(
+            _A_SUBCAUSE, noise, random.Random(seed), variant_richness=5
+        )
+        seen.add(variant)
+    assert seen == {
+        "canonical",
+        "paraphrase_wording",
+        "paraphrase_reordered",
+        "paraphrase_verbose",
+        "paraphrase_terse",
+    }
+
+
+def test_render_subcause_description_richness_weighting_is_nonuniform() -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    counts: dict[str, int] = {}
+    for seed in range(3000):
+        _, variant = render_subcause_description(
+            _A_SUBCAUSE, noise, random.Random(seed), variant_richness=5
+        )
+        counts[variant] = counts.get(variant, 0) + 1
+    ordered_labels = [
+        "canonical",
+        "paraphrase_wording",
+        "paraphrase_reordered",
+        "paraphrase_verbose",
+        "paraphrase_terse",
+    ]
+    ordered_counts = [counts.get(label, 0) for label in ordered_labels]
+    assert all(earlier > later for earlier, later in itertools.pairwise(ordered_counts))
+
+
+@pytest.mark.parametrize("richness", [0, -1, 6])
+def test_render_subcause_description_rejects_out_of_range_richness(richness: int) -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    with pytest.raises(ValueError, match="variant_richness"):
+        render_subcause_description(_A_SUBCAUSE, noise, random.Random(1), variant_richness=richness)
+
+
+def test_render_subcause_description_none_richness_matches_omitted_argument() -> None:
+    noise = generate_noise_tokens(random.Random(1), datetime(2026, 1, 1), 100)
+    explicit = render_subcause_description(
+        _A_SUBCAUSE, noise, random.Random(7), variant_richness=None
+    )
+    omitted = render_subcause_description(_A_SUBCAUSE, noise, random.Random(7))
+    assert explicit == omitted
