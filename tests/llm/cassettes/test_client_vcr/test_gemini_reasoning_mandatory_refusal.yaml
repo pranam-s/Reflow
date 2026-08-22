@@ -1,0 +1,57 @@
+interactions:
+- request:
+    body: '{"messages":[{"content":"What is the capital of France? Answer as JSON.","role":"user"}],"max_completion_tokens":200,"model":"google/gemini-3.7-flash","reasoning_effort":"none","response_format":{"json_schema":{"name":"capital_diagnosis","schema":{"additionalProperties":false,"description":"A
+      trivial structured-output schema, unrelated to payments diagnosis.\n\nDeliberately
+      simple and off-topic from :mod:`reflow.diagnose`''s real\nschemas: these tests
+      exercise ``reflow.llm``''s transport-level\nbehaviour (structured output, reasoning
+      configuration, truncation),\nnot diagnosis-specific prompt content, which is
+      covered separately in\n``tests/diagnose``.","properties":{"country":{"title":"Country","type":"string"},"capital":{"title":"Capital","type":"string"}},"required":["country","capital"],"title":"_CapitalDiagnosis","type":"object"},"strict":true},"type":"json_schema"},"stream":false,"temperature":0.0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '914'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+      user-agent:
+      - speakeasy-sdk/python 0.10.8 2.788.4 1.0.0 openrouter
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: '{"error":{"message":"Reasoning is mandatory for this endpoint and cannot
+        be disabled.","code":400,"metadata":{"provider_name":null}}}'
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,request-id,cf-ray
+      cf-ray:
+      - a2f4fac8db3c33ea-DEL
+      connection:
+      - keep-alive
+      content-type:
+      - application/json
+      date:
+      - Sat, 22 Aug 2026 21:30:36 GMT
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      server:
+      - cloudflare
+      transfer-encoding:
+      - chunked
+      x-content-type-options:
+      - nosniff
+    status:
+      code: 400
+      message: Bad Request
+version: 1

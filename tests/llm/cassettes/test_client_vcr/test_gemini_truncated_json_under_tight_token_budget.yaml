@@ -1,0 +1,77 @@
+interactions:
+- request:
+    body: '{"messages":[{"content":"What is the capital of France? Answer as JSON.","role":"user"}],"max_completion_tokens":30,"model":"google/gemini-3.7-flash","response_format":{"json_schema":{"name":"capital_diagnosis","schema":{"additionalProperties":false,"description":"A
+      trivial structured-output schema, unrelated to payments diagnosis.\n\nDeliberately
+      simple and off-topic from :mod:`reflow.diagnose`''s real\nschemas: these tests
+      exercise ``reflow.llm``''s transport-level\nbehaviour (structured output, reasoning
+      configuration, truncation),\nnot diagnosis-specific prompt content, which is
+      covered separately in\n``tests/diagnose``.","properties":{"country":{"title":"Country","type":"string"},"capital":{"title":"Capital","type":"string"}},"required":["country","capital"],"title":"_CapitalDiagnosis","type":"object"},"strict":true},"type":"json_schema"},"stream":false,"temperature":0.0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '887'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+      user-agent:
+      - speakeasy-sdk/python 0.10.8 2.788.4 1.0.0 openrouter
+    method: POST
+    uri: https://openrouter.ai/api/v1/chat/completions
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAA/+JSgAEuAAAAAP//4kIwAQAAAP//QmICAAAA//9CYgIAAAD//0JiAgAAAP//QmIC
+        AAAA///cVF1T4koQ/StTedkqUSQECFC1D6Bo5IKogODe3UoNSScZmMyE+QigxX+/E1yFvWXdH3Cf
+        CN2nu0/36Z43i4RW24qBXdhu0605tarTuMh74bg3c7QL1aF3O15urpOmdW7xxRICZeBBglU54GlG
+        QRHOjCsQgBWYVMcs51bKQ6BFds5jCpcxpISRC6fsXkQUy8SEZYLnJARhQLcHkLHJnVSQ+hFhMYhM
+        EGYqMk2p8YDISQC+IoeIECKsqSqqJ9zYpdX+2/TDQtha7cq5RXls8i/kR7jJSGTiG6bScG5bFFis
+        ChYMK5KD/2//sDP3J6O/evdjg0lBShyD1X6zBDc82xaWkkiF2YEAZwqORAVEWmJ6/FtkNP2YqLOz
+        JygKsRj1x6N7NNIq0+rs7Cf7yYY7FPFAS0QkYnyDOEPApBYFWCXwHnCHjFggzLRRJiAgEugOpVgF
+        CcgDSpqvFKMd19/yAnOYcFhGd99SlBq9Ak25liZIQE5gUyQHHCQoIkBDhFmIiJIItpnRGkIUYoWR
+        2mWAFEexxsJ0DKaKEiRQCIcJCGABlIsGrJNe/RAUJvRdlCLeNP/pLCvYFnM7/Pz/hxJxYch8XsLF
+        70vIbeM77qsksdlELYpJdV6aLWyXei+unTXpqvNSWZZ0dvmsnmVvchtd8wZeeAO6mS9f+3S1nOV8
+        5S2e8nq/0WltghvquQPMJzBU81dnXoXuj+V1vzLDm1I9rw1Ep7tO04EXkcfd8s7ZXbL8fvOgl4+V
+        iLdSbztpBH3y4Pbx1Toq1ToCPKc+GYup5l6dsDsvkOtpp3UzTJyeay8eO62nZtd+3c5eM2d976yv
+        5o7rNXvdBRlOzIE0Sj/svPNMFqWYlKJx6MnhOMtEWKrOa7YSM5GkN7MR29KdeNZxyHbT6XU6786m
+        k9zJax2pRyWyTu30pr6iKzd+VI3u1UMTb26xPbR546k66j/djUvpbYs1YOpWB4vH79+t/a/9/te5
+        pT+O1kieZspXfGW2p3imqsXVfrxgn/aqa5aSK0yPyFarQEojX6VcqVRsu25X60Y36S92fGW1I0wl
+        nP9Z4Lj8b1Zg9gjCz3xG6IPF3wii4NSMdUj4qaHY0RPD/p3HaW6dmZUDnPqERe8r539B9QvUb7Yn
+        4Eqj9jX0OCX5B75eaVTr+y+meErw+BycTpikRpX/aH2/3/8DAAD//wMAK1pMMtsGAAA=
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,request-id,cf-ray
+      cf-ray:
+      - a2f4fac9ac7033e4-DEL
+      connection:
+      - keep-alive
+      content-encoding:
+      - gzip
+      content-type:
+      - application/json
+      date:
+      - Sat, 22 Aug 2026 21:30:39 GMT
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      server:
+      - cloudflare
+      transfer-encoding:
+      - chunked
+      x-content-type-options:
+      - nosniff
+      x-generation-id:
+      - gen-1787434236-vEdSEW3u7e2MHGSjwDh8
+    status:
+      code: 200
+      message: OK
+version: 1
