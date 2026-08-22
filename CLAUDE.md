@@ -10,6 +10,21 @@ bounded recovery action for each cluster, executes that action against Razorpay'
 test-mode APIs, and reports measured recovery against a baseline. It is being built in
 phases; this repository starts from an empty skeleton and grows feature by feature.
 
+## Governing principles
+
+These two govern every phase, above and before the hard rules below. They are not
+negotiable in wording's *meaning*, even where the wording itself may be refined:
+
+1. **We create the headline out of the code, not fit the code to a headline.** No
+   result in this project is decided in advance. If a benchmark says our preferred
+   approach loses, that is the finding, and it gets reported as such. Data, metrics,
+   and evaluation criteria are never tuned after the fact to produce a desired number.
+2. **Design and evaluate first, then code, then test, then the rest of the SDLC.** An
+   approach is chosen and justified in writing before implementation begins.
+   Alternatives that were considered and rejected are recorded, along with the reason
+   each was rejected, so a later reader can see the decision was made honestly rather
+   than reverse-engineered from whatever got built.
+
 ## Hard rules
 
 - **No comments in code.** Not one, anywhere in `src/` or `tests/`. Every module, class,
