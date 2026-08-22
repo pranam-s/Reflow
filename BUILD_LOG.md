@@ -389,3 +389,67 @@ process still has files inside it open on Windows (POSIX allows removing an open
 **Consequence.** Not a code bug; a sequencing constraint specific to this OS. The two `uv run` invocations
 against one `.venv` must not overlap here -- the 3.13 verification pass was run only after every live
 benchmark process had fully exited, not concurrently with one.
+
+### Payment Links restrict which method is offered, not which instrument
+
+**What.** Deliverable 1's `SWITCH_METHOD` action assumes a Payment Link can be restricted away from a
+specific payment method. Needed to verify this rather than assume it, and separately needed to know
+whether an instrument-level restriction (e.g. "not this card") exists, since `DIFFERENT_INSTRUMENT`
+-classified reasons would otherwise need their own enforceable action.
+
+**Evidence.** Fetched live, 2026-08-23:
+<https://razorpay.com/docs/api/payments/payment-links/customise-payment-methods/> documents exactly
+four boolean toggles nested under `options.checkout.method` -- `card`, `netbanking`, `upi`, `wallet` --
+that show or hide a payment method on the link's checkout. No parameter names a specific card, VPA, or
+other instrument. Separately, `create-standard`'s own top-level request parameters (fetched live the
+same day) do not include any method-restriction field at all -- the mechanism lives under the separate
+`options.checkout` customisation layer, not the base creation call.
+
+**Consequence.** `SWITCH_METHOD` is real and enforceable (disable the method that just failed).
+`DIFFERENT_INSTRUMENT`-classified reasons map to a plain `RECOVERY_LINK_NOW` instead of a fabricated
+"switch instrument" action the API cannot honour. Recorded in `docs/design.md` ADR-0005 and in
+`reflow.policy.actions`'s module docstring.
+
+### The per-customer contact cap fires zero times on the 50,000-event corpus, and it is not a bug
+
+**What.** Phase 5's `ContactCapGuardrail` (default: block a 4th chase contact to one customer within a
+rolling 24-hour window) fired exactly 0 times across the full corpus, while `CooldownGuardrail` (a
+4-hour minimum gap between contacts) fired 428 times. A zero-fire guardrail is the kind of thing that
+looks, at a glance, like a wiring bug.
+
+**Evidence.** Checked directly, independent of the guardrail's own code: only 232 of 15,755 customers in
+the generated corpus ever have three or more raw failed-payment events within *any* rolling 24-hour
+window at all (median customer sees 3.17 events total, spread across the full 30-day generation period).
+`CooldownGuardrail`'s tighter, per-contact 4-hour gate already suppresses same-day recontacting
+aggressively enough that the daily cap of 3 never has anything left to block at this corpus's realised
+customer-visit density.
+
+**Consequence.** Reported as a genuine, investigated finding in `docs/design.md` ADR-0005 rather than
+quietly tuning the default cap downward to manufacture a non-zero number -- per this project's first
+governing principle, the finding is reported, not the code fitted to a more flattering result.
+`tests/policy/test_guardrails.py` exercises `ContactCapGuardrail`'s blocking branch directly with a
+synthetic context, so the guardrail's correctness does not depend on this corpus ever reaching it.
+
+### Two research passes appeared to contradict each other on Payment Link method restriction; both were right
+
+**What.** An early research pass concluded that restricting a Payment Link to one payment method is done
+via `options.checkout.config.display.blocks.*.instruments` with `show_default_blocks: false`, and that
+"there is no flat `options.checkout.method` field." Phase 5 concluded the opposite — that
+`options.checkout.method` booleans are exactly how it works. `SWITCH_METHOD` depends on which is true.
+
+**Evidence.** The Create Payment Link reference does not document `options` as a request parameter at
+all; it links out to **two separate pages**:
+- `customise-payment-methods/` — *Options and **Method** Parameters*: show or hide whole payment
+  methods via `options.checkout.method`.
+- `customise-options-config/` — *Options and **Config** Parameters*: granular restriction by card
+  network, issuer, BIN and card type.
+
+**Consequence.** Both findings were accurate; each pass had read one page. These are different features
+at different granularity, not competing accounts of one feature. `SWITCH_METHOD` needs whole-method
+switching, so it uses `options.checkout.method`. The config/blocks mechanism is the right tool only if
+instrument-level restriction is ever needed, which the action set does not require.
+
+**Why it is worth recording.** Two sources agreeing is weak evidence; two sources disagreeing is a
+prompt to go read the primary reference rather than to pick a side. Had this been resolved by trusting
+the more recent agent, the reasoning would have been right by luck. It also means Phase 6 implements
+against a verified shape instead of a plausible one.
