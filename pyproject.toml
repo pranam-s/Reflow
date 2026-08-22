@@ -7,7 +7,10 @@ authors = [
     { name = "Pranam Srivastava", email = "pranamsrivastava28@gmail.com" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "openpyxl>=3.1.5",
+    "pydantic>=2.13.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -20,6 +23,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.16.4",
     "ty>=0.0.74",
+    "types-openpyxl>=3.1.5.20260807",
 ]
 
 [tool.ruff]
@@ -32,7 +36,7 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "C4", "RET", "PT", "D", "ANN", "
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D", "S101", "ANN"]
+"tests/**/*.py" = ["D", "S101", "S311", "ANN"]
 
 [tool.mypy]
 python_version = "3.11"
