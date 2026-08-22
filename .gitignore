@@ -35,6 +35,8 @@ htmlcov/
 # Generated artefacts
 out/
 reports/
+!docs/reports/
+!docs/reports/**
 *.jsonl.gz
 
 # Editors / OS

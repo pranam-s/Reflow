@@ -8,8 +8,10 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "drain3>=0.9.11",
     "openpyxl>=3.1.5",
     "pydantic>=2.13.4",
+    "scikit-learn>=1.9.0",
 ]
 
 [build-system]
@@ -39,14 +41,18 @@ convention = "google"
 "tests/**/*.py" = ["D", "S101", "S311", "ANN"]
 
 [tool.mypy]
-python_version = "3.11"
 strict = true
 warn_unused_configs = true
+exclude = ['^\.venv/']
 
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "drain3.*"]
+ignore_missing_imports = true
 
 [tool.ty.environment]
 python-version = "3.11"
