@@ -164,6 +164,51 @@ def test_build_event_forced_bank_and_order_id_are_applied() -> None:
     assert "Test Bank" in event.description
 
 
+def test_build_event_variant_richness_one_forces_canonical() -> None:
+    for seed in range(50):
+        rng = random.Random(seed)
+        event = build_event(
+            rng=rng,
+            reason_record=RECORD_BY_REASON["payment_failed"],
+            remediation_class=REMEDIATION_BY_REASON["payment_failed"],
+            method=PaymentMethod.UPI,
+            upi_flow=UpiFlow.INTENT,
+            created_at=datetime(2026, 1, 1),
+            customer_id="cust_test",
+            attempt_number=1,
+            downtime_window_id=None,
+            variant_richness=1,
+        )
+        assert event.description_variant == "canonical"
+
+
+def test_build_event_variant_richness_none_matches_default() -> None:
+    explicit = build_event(
+        rng=random.Random(9),
+        reason_record=RECORD_BY_REASON["payment_failed"],
+        remediation_class=REMEDIATION_BY_REASON["payment_failed"],
+        method=PaymentMethod.UPI,
+        upi_flow=UpiFlow.INTENT,
+        created_at=datetime(2026, 1, 1),
+        customer_id="cust_test",
+        attempt_number=1,
+        downtime_window_id=None,
+        variant_richness=None,
+    )
+    omitted = build_event(
+        rng=random.Random(9),
+        reason_record=RECORD_BY_REASON["payment_failed"],
+        remediation_class=REMEDIATION_BY_REASON["payment_failed"],
+        method=PaymentMethod.UPI,
+        upi_flow=UpiFlow.INTENT,
+        created_at=datetime(2026, 1, 1),
+        customer_id="cust_test",
+        attempt_number=1,
+        downtime_window_id=None,
+    )
+    assert explicit == omitted
+
+
 def test_build_event_is_deterministic_for_same_seed() -> None:
     def make() -> object:
         rng = random.Random(123)

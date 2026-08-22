@@ -40,6 +40,23 @@ and the corpus needs to actually contain such pairs for that difference to
 be measurable at all. See :data:`reflow.corpus.reasons.NARROW_REASON_ALT_PHRASINGS`
 and :class:`reflow.corpus.reasons.LatentSubcause.paraphrase`.
 
+**Phase 1b: the ``variant_richness`` axis.** :func:`render_subcause_description`
+accepts an optional ``variant_richness``. When omitted (``None``), rendering
+is byte-for-byte identical to pre-Phase-1b behaviour (the
+``paraphrase``/``_SUBCAUSE_CANONICAL_WEIGHT`` mechanism above, unchanged).
+When given an explicit level (see
+:data:`reflow.corpus.reasons.SUPPORTED_VARIANT_RICHNESS_LEVELS` and
+:func:`reflow.corpus.reasons.max_variant_richness`), every latent
+sub-cause instead draws from :func:`reflow.corpus.reasons.subcause_wordings`
+-- the canonical template plus that many authored
+:attr:`~reflow.corpus.reasons.LatentSubcause.variants` -- weighted by
+:func:`reflow.corpus.reasons.zipf_weights` so that, exactly as with the
+method/reason pools elsewhere in this corpus, more wordings does not mean
+an even split: the canonical wording stays the single most common form and
+each successive alternate is rarer than the last. This is the mechanism
+that turns surface-variation richness into a swept parameter rather than a
+fixed property of the corpus, per the Phase 1b corpus-design addendum.
+
 Known simplification, stated plainly rather than hidden: the noise-token
 vocabulary reuses :data:`reflow.corpus.tokens.INDIAN_BANKS` as a stand-in
 "counterparty institution" name even for Wallet and Cardless EMI events,
@@ -56,7 +73,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from reflow.corpus import tokens as tok
-from reflow.corpus.reasons import NARROW_REASON_ALT_PHRASINGS, LatentSubcause
+from reflow.corpus.reasons import (
+    NARROW_REASON_ALT_PHRASINGS,
+    LatentSubcause,
+    subcause_wordings,
+    zipf_weights,
+)
 from reflow.taxonomy.methods import PaymentMethod
 
 ALT_PHRASING_PROBABILITY: float = 0.4
@@ -202,23 +224,43 @@ def render_narrow_description(
 
 
 def render_subcause_description(
-    subcause: LatentSubcause, noise: NoiseTokens, rng: random.Random
+    subcause: LatentSubcause,
+    noise: NoiseTokens,
+    rng: random.Random,
+    variant_richness: int | None = None,
 ) -> tuple[str, str]:
     """Render a description for one latent sub-cause of a catch-all reason.
 
     Args:
         subcause: The hand-authored sub-cause (see
             :data:`reflow.corpus.reasons.CATCH_ALL_SUBCAUSES`), whose
-            ``template`` and optional ``paraphrase`` contain ``str.format``
-            placeholders drawn from :meth:`NoiseTokens.as_format_mapping`.
+            ``template``, optional ``paraphrase``, and ``variants`` contain
+            ``str.format`` placeholders drawn from
+            :meth:`NoiseTokens.as_format_mapping`.
         noise: The event's drawn noise tokens.
-        rng: Deterministic random source, used only to decide whether to
-            use the canonical template or the paraphrase, when one exists.
+        rng: Deterministic random source, used only to decide which wording
+            to render.
+        variant_richness: When ``None`` (the default), rendering uses the
+            pre-Phase-1b ``paraphrase``/:data:`_SUBCAUSE_CANONICAL_WEIGHT`
+            mechanism, unchanged. When given an explicit level, rendering
+            instead draws from :func:`reflow.corpus.reasons.subcause_wordings`
+            weighted by :func:`reflow.corpus.reasons.zipf_weights` -- see
+            module docstring.
 
     Returns:
         A tuple of (rendered description, variant label), following the
         same labelling convention as :func:`render_narrow_description`.
+
+    Raises:
+        ValueError: If ``variant_richness`` is given but out of bounds for
+            ``subcause`` -- see :func:`reflow.corpus.reasons.subcause_wordings`.
     """
+    if variant_richness is not None:
+        candidates = subcause_wordings(subcause, variant_richness)
+        weights = zipf_weights(len(candidates))
+        text, variant_label = rng.choices(candidates, weights=weights, k=1)[0]
+        return text.format_map(noise.as_format_mapping()), variant_label
+
     if subcause.paraphrase is not None and rng.random() >= _SUBCAUSE_CANONICAL_WEIGHT:
         text = subcause.paraphrase.text
         variant_label = subcause.paraphrase.label

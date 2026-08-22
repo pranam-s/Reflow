@@ -180,7 +180,10 @@ class PaymentEvent:
             narrow reasons, which genuinely have only one cause.
         description_variant: Ground truth for which surface wording
             produced ``description``: ``"canonical"``,
-            ``"paraphrase_wording"``, or ``"paraphrase_reordered"``. See
+            ``"paraphrase_wording"``, ``"paraphrase_reordered"``, or,
+            when ``variant_richness`` was requested for a catch-all
+            reason's latent sub-cause, additionally
+            ``"paraphrase_verbose"`` or ``"paraphrase_terse"``. See
             :mod:`reflow.corpus.descriptions` module docstring.
         is_outlier: Ground truth marking this event's ``(method,
             error_reason)`` as a genuine singleton/rare occurrence in the
@@ -241,6 +244,7 @@ def build_event(
     forced_bank: str | None = None,
     forced_order_id: str | None = None,
     is_outlier: bool = False,
+    variant_richness: int | None = None,
 ) -> PaymentEvent:
     """Assemble one fully populated :class:`PaymentEvent`.
 
@@ -268,6 +272,11 @@ def build_event(
             (:mod:`reflow.corpus.generator`) from this event's realized
             ``(method, reason)`` frequency across the whole generated
             corpus; passed through unchanged onto the returned event.
+        variant_richness: Forwarded to
+            :func:`reflow.corpus.descriptions.render_subcause_description`
+            when ``reason_record.reason`` is a catch-all reason; ignored
+            for narrow reasons. ``None`` (the default) reproduces
+            pre-Phase-1b rendering exactly.
 
     Returns:
         A fully populated :class:`PaymentEvent` with ``split`` left unset
@@ -287,7 +296,9 @@ def build_event(
     if reason in CATCH_ALL_SUBCAUSES:
         subcauses = CATCH_ALL_SUBCAUSES[reason]
         subcause = rng.choices(subcauses, weights=[s.weight for s in subcauses], k=1)[0]
-        description, description_variant = render_subcause_description(subcause, noise, rng)
+        description, description_variant = render_subcause_description(
+            subcause, noise, rng, variant_richness=variant_richness
+        )
         latent_subcause_id = subcause.subcause_id
     else:
         description, description_variant = render_narrow_description(
