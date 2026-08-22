@@ -419,3 +419,172 @@ individually-smaller, later-firing alerts.
   detectors' zero-variance failure mode), or if `GROUP BY reason`'s fragmentation cost
   is judged acceptable against its zero-new-infrastructure simplicity for a deployment
   that cannot run per-entity burst detection at all.
+
+### ADR-0004: an LLM is invoked at exactly two boundaries, and nowhere structure already resolves it
+
+**Status:** Accepted (Phase 4)
+
+**Context**
+
+ADR-0002 established that `GROUP BY (code, source, step, reason)` beats clustering for
+individual-event root-causing, because Razorpay does not transmit the sub-cause behind
+its own catch-all codes -- there is nothing for any classifier, LLM included, to
+legitimately recover there. ADR-0003 established that a bank outage spans several reason
+codes at once and is found by statistical burst detection (`poisson_surprise`) over
+`(method, bank)` and time, not by reading event text. This phase had to decide, having
+already ruled an LLM out of both of those jobs, where one is actually earned.
+
+`reflow.diagnose.tier1.build_deterministic_table` reconciles every vendored row of
+`reflow.taxonomy.remediation` to its reason code (see that module's docstring for why
+reconciling by *code*, not by row, is the correct granularity: a real
+`PaymentEvent.error_reason` carries no row index, and two of the 110 distinct codes --
+`issuer_technical_error` and `payment_method_not_enabled` -- have rows that individually
+parse cleanly but disagree with each other, which is invisible unless reconciled at the
+code level). That reconciliation leaves exactly two situations no deterministic table or
+statistical detector can resolve, and Deliverable 2's brief named them in advance, before
+any measurement: **15 reason codes** whose vendored `Next Steps` text is genuinely
+ambiguous or self-contradictory, and **every detected incident**, whose probable cause
+spans several reason codes by construction and therefore has no single-reason lookup
+that could substitute for a judgment about the incident as a whole.
+
+**Evidence**
+
+The full pipeline was run against the real, generated 50,000-event corpus (seed
+`20260822`), with real OpenRouter calls end to end -- `deepseek/deepseek-v4-flash` for
+both Tier 2 call sites (verified live, via a committed VCR cassette, to actually honour
+`reasoning_effort="none"`) and `openai/gpt-oss-20b` as an independent judge (a different
+model family, to avoid self-preference bias). Full results, provenance, and per-call
+cost: `docs/reports/phase4_diagnosis.{json,md}`.
+
+- **The routing split.** 43,028 of 50,000 events (86.056%) resolved in Tier 1 with zero
+  LLM calls. 6,972 events (13.944%) carried one of the 15 escalated reason codes and were
+  resolved by Tier 2 -- but that 13.944% of *events* was served by exactly **15 live LLM
+  calls total**, not 6,972, because Tier 2's ambiguous-reason result is cached per reason
+  code (`reflow.diagnose.ambiguous.AmbiguousReasonDiagnoser`). The distinct-reason-code
+  escalation rate (15/110 = 13.6%) and the event-weighted escalation rate (13.944%) are
+  close by coincidence of this corpus's mix, not by construction -- there is no reason
+  they would have to agree, and this project reports the measured event-weighted number,
+  not the reason-code count, as the headline, since it is what a real merchant's traffic
+  actually experiences.
+- **Incident diagnosis touches a tiny fraction of volume.** `poisson_surprise` detected
+  113 incidents across the full corpus. Every one of them received its own live,
+  uncached LLM call (113 calls total) -- but 113 incidents against 50,000 events means
+  99.774% of events were never part of any incident-level LLM call at all; the incident
+  -diagnosis tier's total cost of $0.006948 for this entire run reflects that.
+- **Actual cost, measured, not estimated.** This run's total real spend was **$0.009102**
+  ($0.000814 one-time for the 15 ambiguous reasons, $0.006948 for 113 incident diagnoses,
+  $0.001340 for 16 judge samples). Projected to production volume:
+  **$0.0147 per 100,000 events cold-cache** (first-ever run, includes the one-time
+  ambiguous-reason cost) and **$0.0139 per 100,000 events warm-cache** (steady state).
+  Against this phase's $1.00 spend cap, that is roughly 1/68th of the cap *per 100,000
+  events* -- the cap would cover on the order of 6-7 million events' worth of production
+  Tier 2 calls at these measured rates. The LLM's cost is a rounding error precisely
+  because it is invoked on 13.944% of events (cached down to 15 calls) plus 0.226% of
+  events (113 uncached incident calls), never on the other ~86%.
+- **The judge found real, calibrated disagreement, not noise.** Sampling 8 ambiguous
+  -reason diagnoses and 8 incident diagnoses (16 total, seeded, not exhaustive), the
+  independent judge did not endorse 6 of 16 (37.5%). Zero were labelled outright
+  `"wrong"`; all 6 were `"questionable"`, and every one of the 6 has a specific,
+  legible mechanism: for ambiguous reasons, the Tier 2 model tends to pick *one* of two
+  remediation paths the vendored text genuinely offers as alternatives (e.g.
+  `compliance_violation`'s customer-vs-merchant branch, `transaction_daily_count_exceeded`'s
+  wait-vs-switch-instrument branch) and reports high confidence in that single choice
+  rather than surfacing the disjunction; for incidents, the model frequently assigns
+  `high` confidence to a bank-outage hypothesis from as few as 3-6 correlated failures,
+  which the judge correctly flags as more certain than three events can support. Neither
+  failure mode is a hallucinated fact -- both are overconfidence given genuinely
+  ambiguous or thin evidence, which is exactly the kind of thing a second, differently
+  -biased model is good at catching and a purely mechanical accuracy check is not.
+- **A judge output was also observed malformed once, without breaking the pipeline.**
+  One of the 16 judge samples (`073_upi_IndusInd Bank`) returned a `concerns` string that
+  degenerated into dozens of repeated `"... "` tokens -- a real generation-quality defect
+  in `openai/gpt-oss-20b`'s output on that call. It did not break anything downstream:
+  `concerns` is an unconstrained string field, so it satisfied the schema and was
+  recorded verbatim rather than crashing or silently being dropped, which is itself
+  evidence for validating structure strictly (the enum/bool fields) while tolerating free
+  -text fields to hold whatever a model actually produces.
+
+**Where an LLM is deliberately not used** (this is the boundary this ADR exists to draw):
+
+- **The 95 of 110 deterministically-resolved reason codes (86.056% of this corpus's
+  events).** The vendored `Next Steps` text already specifies one remediation
+  unambiguously for these; a `dict` lookup resolves them with 100% precision, $0 cost,
+  and no latency. Routing these through an LLM would add cost, latency, and a new
+  failure surface (truncation, schema drift, non-determinism) to replace a lookup that
+  cannot be wrong within the taxonomy's own terms. This is the largest area in the whole
+  pipeline where an LLM was considered and rejected, and it is why the phase's headline
+  number is stated as "86% needs no model" rather than buried under the 14% that does.
+- **Per-event root-causing of catch-all reasons.** ADR-0002's finding stands and this
+  phase did not re-litigate it: an LLM asked to infer a catch-all reason's sub-cause from
+  `error_description` would be inferring detail Razorpay's own documentation says it does
+  not transmit (`card_declined`: "not shared with Razorpay"; `payment_declined`: "not
+  communicated to Razorpay"). An LLM is exactly as blind to that missing signal as
+  template hashing or TF-IDF+HDBSCAN were measured to be -- the difference is a
+  clustering algorithm fails visibly (near-identical metrics to `GROUP BY`), while an LLM
+  would confidently *narrate* a plausible-sounding sub-cause with no more evidence than
+  the classifiers had, which is a worse failure mode, not a better one.
+- **Burst/incident detection itself.** `poisson_surprise` finds the 113 incidents;
+  nothing here asks an LLM to scan raw event streams for anomalies. A statistical test
+  purpose-built for count-over-time surprise is cheaper (the entity-level detector runs
+  the full corpus in tens of milliseconds, ADR-0003) and more auditable than an LLM would
+  be at the same job, and this phase's LLM is invoked only *after* detection, to
+  interpret an incident already found by cheaper means -- never to find it.
+- **Judging every diagnosis.** The judge samples 16 of 128 real Tier 2 outputs (8 of 15
+  ambiguous reasons, 8 of 113 incidents), not all of them. A real deployment producing
+  many more incidents than this corpus's 113 would make exhaustive judging progressively
+  more expensive for diminishing signal; sampling is the production-shaped choice, made
+  here even though this run's actual volume was cheap enough that exhaustive judging
+  would also have fit the budget.
+
+**Decision**
+
+The LLM is invoked at exactly two boundaries: once per distinct ambiguous reason code
+(cached, 15 calls total, ever, regardless of corpus size), and once per detected
+incident (uncached, 113 calls for this corpus, scaling with detected-incident volume,
+not event volume). Every other event resolves deterministically. This boundary is kept
+because it is where the earlier phases' own findings say structure runs out --
+deterministic lookup for reason codes; statistical detection for bursts -- not because an
+LLM was hard to avoid using elsewhere.
+
+**Alternatives considered and rejected**
+
+- **Route every event through the LLM for a "double-checked" diagnosis, even
+  deterministically-resolved ones.** Rejected: would multiply cost and latency by roughly
+  7x (50,000 LLM-touched events instead of 6,972 event-equivalents-worth of 15 cached
+  calls plus 113 incident calls) for a class of reason where the deterministic answer is
+  already exact within the taxonomy's own terms; the ADR-0002 clustering bake-off already
+  showed that adding a model where the ground truth is fully specified buys nothing.
+- **Use the LLM to infer catch-all sub-causes per event.** Rejected for the same
+  evidentiary reason ADR-0002 rejected clustering there: Razorpay does not transmit the
+  signal, so there is nothing to legitimately infer, only to confidently fabricate.
+- **Use the LLM as the incident detector (feed it raw event streams and ask "is this an
+  outage").** Not benchmarked, because ADR-0003 already has a detector recommendation
+  with measured F1 and background false-positive rate; replacing a sub-second statistical
+  test with a per-window LLM call would be strictly more expensive with no evidence it
+  would be more accurate, and this phase's brief scoped the LLM to interpretation of an
+  already-detected incident, not detection itself.
+- **Judge every Tier 2 output instead of sampling.** Rejected as the production-shaped
+  choice even though this run's volume was small enough to afford it: sampling is what
+  scales, and reporting a sampled disagreement rate (37.5% of 16) is honest about being
+  an estimate rather than implying a false completeness.
+- **Disable reasoning for the judge model the same way as the Tier 2 model.** Rejected
+  after `openai/gpt-oss-20b` was found live to also mandate reasoning (`BUILD_LOG.md`,
+  2026-08-23) -- `reasoning_effort="none"` is now requested only for models verified live
+  to honour it (currently just the Tier 2 model), never assumed from a parameter merely
+  being listed as accepted.
+
+**Consequences**
+
+- Production diagnosis cost is dominated by incident volume, not event volume: doubling
+  corpus size roughly doubles detected incidents (and their LLM cost) but leaves the
+  15-call ambiguous-reason cost unchanged, since that set is fixed by the taxonomy, not
+  by traffic. `CostSummary` in `reflow.eval.diagnose` reports both components separately
+  for exactly this reason.
+- A future reason-code addition or vendored-spreadsheet update could shrink or grow the
+  15-code escalation set; `reflow.diagnose.tier1.build_deterministic_table` recomputes it
+  from the vendored file rather than hard-coding the count, so this stays measured, not
+  assumed.
+- This decision is revisited if a production incident volume far exceeds this corpus's
+  113-per-50,000-events rate (making the per-incident LLM cost material rather than a
+  rounding error), or if a future model verified to honour disabled reasoning becomes
+  available for judging at lower cost than `openai/gpt-oss-20b`'s reasoning-enabled rate.

@@ -294,3 +294,98 @@ after the fact. Here the rule itself was flawed, because selecting on an 8-windo
 no statistical power. Following it blindly would have shipped a detector that fails on busy merchants;
 overriding it silently would have made the pre-commitment theatre. Reporting both is the only honest
 option.
+
+### The official `openrouter` SDK cannot express OpenRouter's own documented `reasoning.enabled` field
+
+**What.** Phase 4's client (`reflow.llm`) needs to disable reasoning for models that support it,
+reproducing the `reasoning: {"enabled": false}` behaviour this build log already recorded live against
+raw HTTP. The installed SDK (`openrouter==0.10.8`) does not let it.
+
+**Evidence.** Read directly from `.venv`: `openrouter.components.chatrequest.ChatRequestReasoning`, the
+type the SDK's `Chat.send()`/`send_async()` actually validate a `reasoning=` argument against for the
+Chat Completions endpoint, declares only `effort` and `summary` -- not `enabled`, `max_tokens`, or
+`exclude`, all of which OpenRouter's own documentation describes for the same wire parameter. The SDK's
+base Pydantic model config does not set `extra="forbid"`, so passing `{"enabled": False}` through the
+typed `reasoning=` argument is not rejected -- it is silently dropped, which would make a caller's
+explicit intent to disable reasoning silently no-op rather than fail loudly.
+
+**Consequence.** `reflow.llm.LlmClient` uses the SDK's separate, fully-typed `reasoning_effort`
+top-level shorthand instead (`"none"`, documented by OpenRouter as disabling reasoning entirely for
+effort-controllable models). Verified live via a committed VCR cassette
+(`tests/llm/cassettes/test_client_vcr/`) that this reproduces both halves of the earlier finding exactly:
+`deepseek/deepseek-v4-flash` honours it and returns valid structured JSON; `google/gemini-3.7-flash`
+rejects it with the same "Reasoning is mandatory for this endpoint and cannot be disabled." refusal,
+surfaced as a typed `ReasoningMandatoryError`, never a crash.
+
+### Reasoning-mandatory is not a Gemini-only quirk -- it crashed the first live Phase 4 benchmark run
+
+**What.** `openai/gpt-oss-20b` was chosen as the LLM-as-a-judge model specifically because it is a
+different model family from the Tier 2 model under test (`deepseek/deepseek-v4-flash`), to avoid
+self-preference bias. The first full live run of `reflow.eval.diagnose` crashed partway through with
+`ReasoningMandatoryError` when the judge phase started, after already spending real money on 15
+ambiguous-reason and 30 incident diagnoses that were then discarded because the run never reached the
+point of writing a report.
+
+**Evidence.** `openai/gpt-oss-20b` rejects `reasoning_effort="none"` with the identical "Reasoning is
+mandatory for this endpoint and cannot be disabled." message `google/gemini-3.7-flash` gives. This was
+not anticipated: its `supported_parameters` (from a live `models.list()` call) lists `reasoning_effort`
+as supported, which says nothing about whether every value of that parameter -- including `"none"` -- is
+honoured.
+
+**Consequence.** `reasoning_effort="none"` is now requested only for the Tier 2 model, which has been
+live-verified via a committed cassette to actually honour it; the judge client is left at its provider
+-default reasoning behaviour with a generous `max_completion_tokens=1500` instead. More generally: this
+project now treats "does this model actually honour a disabled-reasoning request" as a per-model fact
+requiring its own live verification, never assumed from a parameter merely being listed as supported.
+`reflow.eval.diagnose.run_benchmark` also gained an optional `progress` callback and `main()` now runs
+Python unbuffered, so a long live run's progress -- and a crash like this one -- is visible in real time
+rather than silently buffered until process exit.
+
+### A capped benchmark run would have silently understated the production cost projection
+
+**What.** To bound wall-clock time and spend on early live runs, `reflow.eval.diagnose.run_benchmark`
+gained a `max_incident_diagnoses` cap. The first version of the cost-projection math computed "cost per
+100,000 events" directly from the cost of the incidents actually diagnosed under that cap, without
+accounting for the incidents detected but not diagnosed.
+
+**Evidence.** At a 30-incident cap against 113 incidents genuinely detected in the same 50,000-event
+corpus, the projected per-100k-events cost was computed from only 30 calls' worth of spend -- silently
+understating the true production cost by roughly 3.8x had the cap ever shipped in a real projection.
+
+**Consequence.** `CostSummary` now separately tracks `n_incidents_detected` (before any cap) and
+`n_incidents_diagnosed` (after), and the cost projection extrapolates the *average* observed cost per
+diagnosed incident across every *detected* incident, not only the ones actually paid for. The final
+report was generated with no cap at all (all 113 detected incidents diagnosed for real), so this
+particular run's numbers were never actually understated -- but the bug would have silently mis-projected
+cost on any future capped run had it shipped uncorrected, which is exactly the kind of thing a single
+successful run does not surface on its own.
+
+### The taxonomy's own "14 ambiguous reasons" undercounts by one at the granularity a real event carries
+
+**What.** `reflow.taxonomy.remediation`'s `CoverageReport.ambiguous` lists 14 rows it could not resolve
+to a single remediation class. A real `PaymentEvent.error_reason` carries no row index, only the bare
+reason code, and Phase 4's Tier 1/Tier 2 boundary has to be drawn at that granularity.
+
+**Evidence.** `payment_method_not_enabled` appears twice in the vendored spreadsheet. Neither row is
+individually ambiguous (one resolves cleanly to `merchant_contact_razorpay`, the other to
+`merchant_action`), so neither is in the taxonomy module's own 14-row ambiguous list -- but the two rows
+disagree with each other, which is invisible to a per-row ambiguity check and only surfaces when
+reconciling by reason code, exactly what `reflow.diagnose.tier1.build_deterministic_table` does.
+
+**Consequence.** Phase 4's Tier 2 ambiguous-reason cache holds 15 entries, not 14: one more live LLM
+call, ever, than the taxonomy module's own framing would suggest. Reported plainly in
+`reflow.diagnose.tier1`'s module docstring and in `docs/reports/phase4_diagnosis.md` rather than rounded
+to match the phase brief's "14 ambiguous reasons" framing.
+
+### `uv run --python 3.13` fails with a Windows file-lock error when another `uv run` holds the same `.venv`
+
+**What.** Running `uv run --python 3.13 mypy .` while a separate, still-running `uv run --env-file .env
+python -m reflow.eval.diagnose` background process was live against the same project failed immediately.
+
+**Evidence.** `error: failed to remove directory '...\.venv\Scripts': Access is denied. (os error 5)` --
+`uv` attempts to rebuild/relink `.venv` for the requested interpreter and cannot, because the concurrent
+process still has files inside it open on Windows (POSIX allows removing an open file; Windows does not).
+
+**Consequence.** Not a code bug; a sequencing constraint specific to this OS. The two `uv run` invocations
+against one `.venv` must not overlap here -- the 3.13 verification pass was run only after every live
+benchmark process had fully exited, not concurrently with one.
