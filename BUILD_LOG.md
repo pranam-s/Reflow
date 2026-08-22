@@ -225,3 +225,27 @@ algorithm to recover.
 **Consequence.** The finding that clustering matches `GROUP BY` under opacity is structural, not a
 measurement artefact. Any candidate scoring above `GROUP BY` there would have indicated leakage; none
 did, and Drain3 scored below it.
+
+### CI went red on 3.13 only, and the matrix is the reason we knew
+
+**What.** Phase 2's PR passed every gate locally and passed CI on Python 3.11, then failed on 3.13:
+
+```
+.venv/lib/python3.13/site-packages/numpy/__init__.pyi:737: error:
+Type statement is only supported in Python 3.12 and greater  [syntax]
+```
+
+**Evidence.** Reproduced locally with `uv run --python 3.13 mypy .`. The cause is a version skew the
+universal lockfile resolves differently per interpreter: **numpy 2.4.6 on 3.11, numpy 2.5.2 on 3.13**.
+The newer stubs use PEP 695 `type` statements, and `[tool.mypy] python_version = "3.11"` told mypy to
+parse everything — including third-party stubs — as 3.11, where that syntax does not exist. Nothing in
+our own code was wrong.
+
+**Consequence.** Removed the pinned `python_version` so mypy analyses under whichever interpreter it is
+running on, which is the correct semantics for a version matrix: the 3.11 job checks 3.11, the 3.13 job
+checks 3.13. Pinning it meant the 3.13 job was never really checking 3.13. Also added an explicit
+`exclude` for `.venv`. Verified `mypy` and the full suite green under both interpreters before pushing.
+
+**Why it is worth recording.** A single-version CI would have shipped this silently, and the repo's
+whole promise is that a reviewer can clone it and have everything work. This is the matrix paying for
+itself on its first real disagreement.

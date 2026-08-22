@@ -41,9 +41,9 @@ convention = "google"
 "tests/**/*.py" = ["D", "S101", "S311", "ANN"]
 
 [tool.mypy]
-python_version = "3.11"
 strict = true
 warn_unused_configs = true
+exclude = ['^\.venv/']
 
 [[tool.mypy.overrides]]
 module = "tests.*"
