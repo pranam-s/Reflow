@@ -588,3 +588,225 @@ LLM was hard to avoid using elsewhere.
   113-per-50,000-events rate (making the per-incident LLM cost material rather than a
   rounding error), or if a future model verified to honour disabled reasoning becomes
   available for judging at lower cost than `openai/gpt-oss-20b`'s reasoning-enabled rate.
+
+### ADR-0005: a closed seven-action set, a sequential guardrail chain, and an
+attempt-number-driven escalation ladder
+
+**Status:** Accepted (Phase 5)
+
+**Context**
+
+Phases 2-4 established what to diagnose and how (`GROUP BY` for root cause, `poisson_surprise`
+for incidents, a two-tier deterministic/LLM split for remediation class). This phase turns a
+diagnosis into a bounded, audited action, and had to answer three design questions before any
+code was written, per this project's second governing principle: what actions can this system
+actually take against Razorpay's real APIs; how does a diagnosis become one of those actions
+without inventing per-reason special cases everywhere; and how are the phase brief's mandatory
+guardrails and stopping rules made independently testable rather than sprinkled through the
+decision logic as ad hoc `if` statements.
+
+**Action set, grounded in verified API reality**
+
+`reflow.policy.actions.Action` is a seven-member closed `StrEnum`: `NO_ACTION`,
+`WAIT_BANK_RECOVERY`, `RECOVERY_LINK_NOW`, `RECOVERY_LINK_BACKOFF`, `SWITCH_METHOD`,
+`ESCALATE_HUMAN`, `RECONCILE`. Two API facts, one already recorded in `BUILD_LOG.md` and one
+verified live for this phase, shape it directly:
+
+- **The Payments API cannot retry a failed authorisation** (`BUILD_LOG.md`, 2026-08-22): it only
+  fetches or captures an already-authorised payment. There is accordingly no `RETRY_PAYMENT`
+  action anywhere in this enum -- every customer-facing recovery action goes through a fresh
+  Payment Link instead.
+- **Payment Links can restrict which payment method is offered, but not which instrument.**
+  Verified live 2026-08-23 against
+  <https://razorpay.com/docs/api/payments/payment-links/customise-payment-methods/>: the
+  documented mechanism is four boolean toggles nested under `options.checkout.method`
+  (`card`, `netbanking`, `upi`, `wallet`) that show or hide a payment method on the link's
+  checkout. No parameter restricts a specific card, VPA, or other instrument. This is exactly
+  why `SWITCH_METHOD` exists as a distinct, enforceable action (disable the method that just
+  failed) while `DIFFERENT_INSTRUMENT`-classified reasons map to a plain `RECOVERY_LINK_NOW`
+  instead of a fabricated "switch instrument" action the API has no way to honour --
+  `reflow.policy.actions` module docstring records this per-class reasoning in full.
+
+`reflow.policy.actions.base_action_for` is a **pure function of
+`reflow.taxonomy.remediation.RemediationClass` alone** -- it never inspects the reason code, the
+event's amount, or which tier produced the diagnosis. This is the direct, literal reading of the
+phase brief's "the policy layer must not care which tier produced the input": the cleanest way to
+guarantee it is to give the base mapping nothing but the class to look at. The one exception the
+brief itself names -- `RECONCILE` for duplicate/already-paid cases -- is deliberately *not* built
+into this pure function. It is `reflow.policy.guardrails.TerminalReasonGuardrail`'s job, keyed off
+`reflow.policy.actions.RECONCILE_REASONS` (`order_already_paid`, `duplicate_request`,
+`duplicate_refund_id` -- reason codes whose own vendored name says "duplicate" or "already paid,"
+read directly off the taxonomy rather than invented, and deliberately excluding
+`duplicate_rrn_found` despite its name, since the taxonomy classifies that row `RETRY_SAME`, not a
+duplicate/already-settled case). Making this a guardrail rather than a mapping special case means
+the decision to reroute away from human escalation is recorded in the audit trail as a guardrail
+firing with a stated reason, not buried invisibly in a lookup table -- and it gave this guardrail
+genuine, non-trivial fire counts on the real corpus (647 of 50,000 events, see Evidence) rather
+than being a guardrail that could structurally never do anything.
+
+**Guardrails: a sequential chain, not seven independent verdicts**
+
+The brief requires every guardrail to be independently testable, independently configurable, and
+to record which rule fired and why -- including when it *passes*. Seven guardrails
+(`reflow.policy.guardrails`) are implemented as small, frozen, stateless classes, each a pure
+function of `(GuardrailContext, Action) -> GuardrailEvaluation`: attempt cap, per-customer contact
+cap, terminal-reason blocklist, cooldown, amount floor, quiet hours, and active-incident
+suppression. They run as a **fixed-order sequential chain**
+(`reflow.policy.guardrails.default_guardrail_chain`), each guardrail receiving whatever action the
+previous one left behind, rather than each guardrail independently voting on the escalation
+ladder's original candidate and needing a precedence rule to reconcile disagreements. This was
+chosen because Deliverable 4's requirement -- "record every guardrail evaluated with its verdict"
+-- does not require every guardrail to see the *same* input; it requires every guardrail's own
+verdict, given the pipeline state when it ran, to be recorded truthfully. A chain makes "what
+would have happened with zero guardrails" a well-defined quantity (the escalation ladder's own
+output, before the first guardrail runs) without inventing a separate precedence-resolution
+mechanism for guardrails that might otherwise disagree.
+
+Evaluation order is fixed and documented, not incidental: `TerminalReasonGuardrail` first (is this
+reason contact-worthy at all), `ActiveIncidentGuardrail` next (is the rail itself already known to
+be down), `AmountFloorGuardrail` (is further spend economically justified), `AttemptCapGuardrail`
+(have we already tried enough times), `ContactCapGuardrail` and `CooldownGuardrail` (anti-spam),
+and `QuietHoursGuardrail` last, since it only ever *defers* a send within the same case rather than
+cancelling it outright, so it should see whatever the rest of the chain has already decided.
+
+**The escalation ladder is driven by observed attempt number, not a simulated action history**
+
+`reflow.policy.ladder.ladder_action` advances a base action along a four-rung sequence
+(`RECOVERY_LINK_NOW -> RECOVERY_LINK_BACKOFF -> SWITCH_METHOD -> ESCALATE_HUMAN`) by
+`PaymentEvent.attempt_number`, clamping at the last rung. A live Phase 6 deployment would track
+"how many times has *this policy* already tried to recover this payment" directly, from its own
+past decisions. This phase evaluates the policy offline, against a historical corpus the policy
+has never acted on -- there is no action history to count. `attempt_number` is the best available
+proxy: a real, ground-truth count of how many times this exact order has already been attempted
+(`reflow.corpus.generator`'s retry-chain mechanism), rather than a synthetic counter this offline
+evaluation has no way to validate. This is stated as a limitation, not hidden: a production
+deployment should replace it with genuine decision history once one exists. The ladder itself
+never produces a terminal "give up" -- past its fourth rung it clamps, holding at
+`ESCALATE_HUMAN` regardless of how many further attempts are observed. Turning that into an
+explicit give-up is `AttemptCapGuardrail`'s job, precisely so "giving up" is a guardrail firing
+with a stated reason in the audit trail, not a silent clamp a reader of the ladder alone would
+never notice -- Deliverable 3's requirement that giving up be an explicit, not an unhandled
+fall-through, is satisfied by construction rather than by convention.
+
+**Compliance note, stated plainly.** `reflow.policy.config`'s quiet-hours window (21:00-09:00) is
+an explicitly documented **policy default**, not a cited TRAI/TCCCPR/DND numeric threshold. This
+project verified live that Payment Links can restrict method (above) and that the Payments API
+cannot retry (`BUILD_LOG.md`); it did **not** verify a specific TRAI time-of-day rule against a
+primary source, and the applicable rule for a given message depends on facts this corpus does not
+model (transactional-vs-promotional message classification, DLT template registration status).
+Fabricating a cited legal threshold this project cannot verify would be worse than stating this
+honestly: quiet hours are configurable, and a merchant with a verified DLT-registered template and
+time window should override the two default fields with that verified value.
+
+**Evidence**
+
+The full pipeline was run against the real, generated 50,000-event corpus (seed `20260822`),
+combining Tier 1's free deterministic table with Phase 4's already-committed, already-paid-for
+Tier 2 output for the 15 ambiguous reasons (`reflow.policy.diagnosis_source` -- zero new LLM
+calls) and a fresh, free run of the ADR-0003-recommended `poisson_surprise` detector for active
+incidents. Total spend for this phase: **$0.00**. Full results and provenance:
+`docs/reports/phase5_policy.{json,md}`.
+
+- **Action distribution (candidate, i.e. zero guardrails, vs. final, i.e. with the full
+  guardrail chain), across all 50,000 events:** `recovery_link_now` 32,254 -> 13,391;
+  `recovery_link_backoff` 4,508 -> 19,137; `switch_method` 8,066 -> 2,720; `escalate_human`
+  5,172 -> 4,310; `no_action` 0 -> 2,423; `reconcile` 0 -> 647; `wait_bank_recovery` 0 -> 7,372.
+  Every one of the seven closed-set actions occurs at least once with guardrails applied; three
+  (`no_action`, `reconcile`, `wait_bank_recovery`) never occur as a *candidate* by construction,
+  since nothing in the base remediation-class mapping or the ladder ever proposes them directly
+  -- they exist only as guardrail outcomes, exactly as designed.
+- **7,372 of 50,000 events (14.7%) reached `wait_bank_recovery`** because
+  `active_incident_suppression` fired -- the single most consequential guardrail measured, and
+  the concrete size of "the agent deliberately choosing not to act" the phase brief calls out as
+  the most interesting decision this system makes.
+- **The over-contact reduction is measured, not asserted:** 44,828 events would have received a
+  chase contact (`recovery_link_now`/`recovery_link_backoff`/`switch_method`) with zero
+  guardrails; 35,248 actually did with the full chain applied -- a reduction of **9,580 contacts
+  (21.37%)**.
+- **Per-guardrail fire counts:** `quiet_hours` 15,648 (by far the largest, consistent with a
+  12-hour default window against uniformly-distributed synthetic timestamps -- roughly half of
+  the ~32,000 remaining immediate-send candidates at the point in the chain where it runs);
+  `active_incident_suppression` 7,372; `amount_floor` 1,991; `contact_cooldown` 428;
+  `terminal_reason_blocklist` 647; `attempt_cap` 4; **`per_customer_contact_cap` 0**.
+- **The contact cap's zero-fire result is a real, measured finding, not a bug**, verified
+  independently outside the guardrail's own unit tests: only 232 of 15,755 customers in this
+  corpus ever have three or more raw failed-payment events within any rolling 24-hour window at
+  all (median customer sees 3.17 events spread across the full 30-day generation period), and
+  `contact_cooldown`'s tighter, 4-hour, per-contact gate already suppresses same-day
+  recontacting aggressively enough that the daily cap of 3 never has anything left to block on
+  this corpus's realised density. This is reported as the finding, per this project's first
+  governing principle, rather than tuning the default cap downward to manufacture a non-zero
+  number for this report -- `tests/policy/test_guardrails.py` exercises `ContactCapGuardrail`'s
+  blocking branch directly with a synthetic context regardless of whether this particular corpus
+  ever reaches it.
+- **The `TERMINAL`-class branch of `terminal_reason_blocklist` also cannot fire on this corpus**,
+  for the same reason ADR-0002's remediation-class module already documents: zero of 110 reason
+  codes are currently classified `RemediationClass.TERMINAL`. Its duplicate/already-paid branch,
+  by contrast, fires 647 times (the concrete count of `order_already_paid` /
+  `duplicate_request` / `duplicate_refund_id` events in this corpus), so the guardrail's overall
+  zero-vs-nonzero split is itself an honest, structural fact about the current taxonomy, not
+  evidence the guardrail is inert -- both branches are exercised directly in
+  `tests/policy/test_guardrails.py`.
+- **Escalation ladder terminal-state distribution:** `in_progress_link_now` 13,391;
+  `in_progress_backoff` 19,137; `in_progress_switch_method` 2,720; `escalated_to_human` 4,310;
+  `reconciled` 647; `waiting_on_bank` 7,372; `no_action_other` 2,419; **`gave_up` 4**. Giving up
+  is rare at this corpus's default `attempt_cap=4` and `MAX_ATTEMPT_NUMBER=5` retry-chain depth
+  (few orders in a 30-day, `RETRY_CONTINUATION_PROBABILITY=0.35` corpus reach a fifth attempt at
+  all) but is explicit and non-zero, not an unhandled fall-through.
+
+**Decision**
+
+The seven-action closed set, the pure remediation-class-only base mapping, the sequential
+seven-guardrail chain in the documented fixed order, and the attempt-number-driven escalation
+ladder are adopted as designed above. Every design choice was written down and justified before
+this phase's code was run against the corpus (`reflow.policy`'s module docstrings predate the
+benchmark numbers in this ADR), consistent with this project's second governing principle.
+
+**Alternatives considered and rejected**
+
+- **A `RETRY_PAYMENT` action calling the Payments API directly.** Rejected: verified, no such
+  API call exists (`BUILD_LOG.md`, 2026-08-22). Inventing one would misrepresent what this system
+  can actually do against Razorpay's real surfaces.
+- **Building the duplicate/already-paid `RECONCILE` carve-out into `base_action_for` as a
+  reason-code special case.** Rejected in favour of making it `TerminalReasonGuardrail`'s job:
+  keeps the base mapping a pure, auditable function of remediation class alone, and makes the
+  reroute a guardrail firing with a recorded reason rather than an invisible lookup-table
+  exception -- and it is the design that produced this guardrail's only non-zero, reportable
+  fire count.
+- **Per-guardrail independent verdicts against one shared original action, reconciled by a
+  precedence rule.** Rejected in favour of a sequential chain: a precedence rule would need its
+  own justification for every possible pair of disagreeing guardrails (seven guardrails is 21
+  pairs), while a fixed, documented sequential order needs only one linear justification and
+  still lets every guardrail's individual verdict be recorded truthfully.
+- **A policy-internal action-history counter for the escalation ladder**, simulating what a live
+  deployment's own past decisions would track. Rejected for this offline evaluation: there is no
+  real action history to simulate correctly (this phase's policy has taken no actions on this
+  historical corpus), and a fabricated one could not be validated against anything. Using
+  `attempt_number` is a stated limitation, not a hidden one, and is the closest honest proxy
+  available.
+- **Citing a specific TRAI/TCCCPR time-of-day threshold for quiet hours.** Rejected: not verified
+  against a primary source, and the real rule depends on message classification and DLT
+  registration status this project does not model. An honestly-labelled configurable policy
+  default was chosen instead of a fabricated citation.
+- **Tuning the contact-cap or amount-floor defaults after seeing they produced a zero or small
+  fire count on this corpus**, to manufacture a more "interesting" number for this report.
+  Rejected per this project's first governing principle: the zero-fire result for
+  `per_customer_contact_cap` is reported as a genuine, investigated finding (see Evidence) rather
+  than quietly tuned away.
+
+**Consequences**
+
+- Phase 6 persists `reflow.policy.decision.Decision` as the audit trail; its shape (input
+  diagnosis, candidate action, every guardrail's verdict whether passed or blocked, final action,
+  human-readable justification) was designed for that now, per the brief, and
+  `reflow.policy.decision.to_dict` already produces a JSON-safe structure with no bespoke
+  handling required for any enum, `datetime`, or `timedelta`.
+- `reflow.eval.policy`'s report writes only aggregate statistics and a small illustrative sample
+  of decisions, not all 50,000 -- the full per-event audit trail is Phase 6's persistence
+  responsibility, not this benchmark report's.
+- This decision is revisited if a production deployment's real action-history data becomes
+  available (replacing the attempt-number ladder proxy with genuine decision history), if a
+  merchant supplies a verified DLT-registered-template time-of-day restriction (replacing the
+  quiet-hours policy default), or if Razorpay's Payment Links API is ever verified to support
+  instrument-level (not just method-level) restriction (which would change the
+  `DIFFERENT_INSTRUMENT` mapping from `RECOVERY_LINK_NOW` to a real instrument-restricted send).

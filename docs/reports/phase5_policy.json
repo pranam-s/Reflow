@@ -1,0 +1,636 @@
+{
+  "provenance": {
+    "generated_at": "2026-08-22T23:13:29+00:00",
+    "seed": 20260822,
+    "n_events": 50000,
+    "phase4_report_path": "L:\\projects\\buildathon\\Reflow\\docs\\reports\\phase4_diagnosis.json",
+    "command": "uv run python -m reflow.eval.policy",
+    "library_versions": {
+      "pydantic": "2.13.4",
+      "python": "3.11.15",
+      "reflow": "0.1.0"
+    },
+    "notes": [
+      "No LLM call and no live Razorpay API call is made anywhere in this benchmark. The 15 ambiguous reason codes' remediation classes are loaded from the already-committed Phase 4 report at zero marginal spend -- see reflow.policy.diagnosis_source module docstring.",
+      "Active-incident detection reruns the ADR-0003-recommended poisson_surprise detector at (method, bank) granularity over the full corpus: a pure statistical computation, not an LLM call, and the same detector/granularity Phase 3 and Phase 4 used.",
+      "Guardrail fire counts and the over-contact reduction compare each decision's escalation -ladder candidate_action (what would have been sent with zero guardrails) against its final_action (what the full guardrail chain actually decided).",
+      "The terminal_reason_blocklist guardrail's TERMINAL-class branch cannot fire on this corpus: reflow.taxonomy.remediation currently classifies zero of 110 reason codes as TERMINAL. Its duplicate/already-paid branch (order_already_paid, duplicate_request, duplicate_refund_id) can and does fire; both branches are exercised directly in tests/policy/test_guardrails.py independent of what this corpus happens to contain.",
+      "example_decisions is a small, illustrative sample (the first decision each guardrail blocked, plus one fully-passed decision), not the full per-event audit trail -- Phase 6 persists every Decision this engine produces; this report is a benchmark summary."
+    ]
+  },
+  "n_events": 50000,
+  "action_distribution": {
+    "candidate_counts": {
+      "escalate_human": 5172,
+      "no_action": 0,
+      "reconcile": 0,
+      "recovery_link_backoff": 4508,
+      "recovery_link_now": 32254,
+      "switch_method": 8066,
+      "wait_bank_recovery": 0
+    },
+    "final_counts": {
+      "escalate_human": 4310,
+      "no_action": 2423,
+      "reconcile": 647,
+      "recovery_link_backoff": 19137,
+      "recovery_link_now": 13391,
+      "switch_method": 2720,
+      "wait_bank_recovery": 7372
+    }
+  },
+  "guardrail_fires": [
+    {
+      "name": "terminal_reason_blocklist",
+      "fired": 647,
+      "passed": 49353,
+      "overrides": {
+        "escalate_human->reconcile": 647
+      }
+    },
+    {
+      "name": "active_incident_suppression",
+      "fired": 7372,
+      "passed": 42628,
+      "overrides": {
+        "recovery_link_backoff->wait_bank_recovery": 788,
+        "recovery_link_now->wait_bank_recovery": 4122,
+        "switch_method->wait_bank_recovery": 2462
+      }
+    },
+    {
+      "name": "amount_floor",
+      "fired": 1991,
+      "passed": 48009,
+      "overrides": {
+        "escalate_human->no_action": 211,
+        "recovery_link_backoff->no_action": 168,
+        "recovery_link_now->no_action": 1347,
+        "switch_method->no_action": 265
+      }
+    },
+    {
+      "name": "attempt_cap",
+      "fired": 4,
+      "passed": 49996,
+      "overrides": {
+        "escalate_human->no_action": 4
+      }
+    },
+    {
+      "name": "per_customer_contact_cap",
+      "fired": 0,
+      "passed": 50000,
+      "overrides": {}
+    },
+    {
+      "name": "contact_cooldown",
+      "fired": 428,
+      "passed": 49572,
+      "overrides": {
+        "recovery_link_backoff->no_action": 63,
+        "recovery_link_now->no_action": 304,
+        "switch_method->no_action": 61
+      }
+    },
+    {
+      "name": "quiet_hours",
+      "fired": 15648,
+      "passed": 34352,
+      "overrides": {
+        "recovery_link_now->recovery_link_backoff": 13090,
+        "switch_method->recovery_link_backoff": 2558
+      }
+    }
+  ],
+  "wait_bank_recovery_count": 7372,
+  "over_contact": {
+    "contacts_without_guardrails": 44828,
+    "contacts_with_guardrails": 35248,
+    "reduction": 9580,
+    "reduction_rate": 0.21370571963951102
+  },
+  "ladder_terminal_distribution": {
+    "escalated_to_human": 4310,
+    "gave_up": 4,
+    "in_progress_backoff": 19137,
+    "in_progress_link_now": 13391,
+    "in_progress_switch_method": 2720,
+    "no_action_other": 2419,
+    "reconciled": 647,
+    "waiting_on_bank": 7372
+  },
+  "example_decisions": [
+    {
+      "payment_id": "pay_w84MUvBpWpPESO",
+      "order_id": "order_CX9pIMK5Hb0GoZ",
+      "customer_id": "cust_2hRUvjclAWHb8u",
+      "method": "upi",
+      "bank": "Kotak Mahindra Bank",
+      "amount": 167500,
+      "created_at": "2026-07-23T00:03:21.644283",
+      "attempt_number": 1,
+      "error_reason": "psp_not_available",
+      "remediation_class": "different_instrument",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": false,
+      "base_action": "recovery_link_now",
+      "candidate_action": "recovery_link_now",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "error_reason 'psp_not_available' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "no active incident detected on this (method, bank) at this event's time."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "amount 167500 paise is at or above the configured floor of 5000 paise."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "attempt 1 is within the cap of 4."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "customer has received 0 contact(s) in 1 day, 0:00:00, under cap 3."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "customer has never been contacted before."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": true,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_backoff",
+          "reason": "event hour 0 falls within the configured quiet-hours window [21, 9) (policy default, not a cited legal threshold -- see reflow.policy.config module docstring); deferring the send rather than contacting the customer overnight."
+        }
+      ],
+      "final_action": "recovery_link_backoff",
+      "ladder_terminal_state": "in_progress_backoff",
+      "scheduled_delay_seconds": 32198.355717,
+      "disallowed_method": null,
+      "justification": "error_reason='psp_not_available' (tier=deterministic) resolved to remediation_class=different_instrument -> base_action=recovery_link_now. Escalation ladder selected candidate_action=recovery_link_now. quiet_hours blocked (recovery_link_now -> recovery_link_backoff): event hour 0 falls within the configured quiet-hours window [21, 9) (policy default, not a cited legal threshold -- see reflow.policy.config module docstring); deferring the send rather than contacting the customer overnight. Final action: recovery_link_backoff."
+    },
+    {
+      "payment_id": "pay_YElq6ky2skTxjC",
+      "order_id": "order_RPwZhrEZKieXKB",
+      "customer_id": "cust_y21CsJRVwWD344",
+      "method": "card",
+      "bank": "State Bank of India",
+      "amount": 4900,
+      "created_at": "2026-07-23T00:27:00.593717",
+      "attempt_number": 1,
+      "error_reason": "card_number_invalid",
+      "remediation_class": "customer_fix",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": false,
+      "base_action": "recovery_link_now",
+      "candidate_action": "recovery_link_now",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "error_reason 'card_number_invalid' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "no active incident detected on this (method, bank) at this event's time."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": true,
+          "action_before": "recovery_link_now",
+          "action_after": "no_action",
+          "reason": "amount 4900 paise is below the configured floor of 5000 paise; further recovery_link_now spend is not economically justified for this payment."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action is not a further attempt, so the attempt cap does not apply."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action does not contact the customer, so the contact cap does not apply."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action does not contact the customer, so the cooldown does not apply."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "no_action",
+      "ladder_terminal_state": "no_action_other",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='card_number_invalid' (tier=deterministic) resolved to remediation_class=customer_fix -> base_action=recovery_link_now. Escalation ladder selected candidate_action=recovery_link_now. amount_floor blocked (recovery_link_now -> no_action): amount 4900 paise is below the configured floor of 5000 paise; further recovery_link_now spend is not economically justified for this payment. Final action: no_action."
+    },
+    {
+      "payment_id": "pay_1Q0bFcLELjzTHn",
+      "order_id": "order_tO5JIlibDPLAvg",
+      "customer_id": "cust_21cKBFYd6XEbnX",
+      "method": "upi",
+      "bank": "ICICI Bank",
+      "amount": 999900,
+      "created_at": "2026-07-23T01:06:59.162621",
+      "attempt_number": 1,
+      "error_reason": "authentication_failed",
+      "remediation_class": "customer_fix",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": false,
+      "base_action": "recovery_link_now",
+      "candidate_action": "recovery_link_now",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "error_reason 'authentication_failed' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "no active incident detected on this (method, bank) at this event's time."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "amount 999900 paise is at or above the configured floor of 5000 paise."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "attempt 1 is within the cap of 4."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "customer has received 1 contact(s) in 1 day, 0:00:00, under cap 3."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": true,
+          "action_before": "recovery_link_now",
+          "action_after": "no_action",
+          "reason": "last contact to this customer was 0:12:07.654897 ago, inside the configured cooldown of 4:00:00; suppressing a further contact this round."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "no_action",
+      "ladder_terminal_state": "no_action_other",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='authentication_failed' (tier=deterministic) resolved to remediation_class=customer_fix -> base_action=recovery_link_now. Escalation ladder selected candidate_action=recovery_link_now. contact_cooldown blocked (recovery_link_now -> no_action): last contact to this customer was 0:12:07.654897 ago, inside the configured cooldown of 4:00:00; suppressing a further contact this round. Final action: no_action."
+    },
+    {
+      "payment_id": "pay_7g3rVMw8NZ8DwS",
+      "order_id": "order_u5VCMOLmI53ENo",
+      "customer_id": "cust_TelCXPG2ciMmMw",
+      "method": "upi",
+      "bank": "ICICI Bank",
+      "amount": 499900,
+      "created_at": "2026-07-23T03:46:32.769511",
+      "attempt_number": 1,
+      "error_reason": "pin_not_set",
+      "remediation_class": "customer_fix",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": true,
+      "base_action": "recovery_link_now",
+      "candidate_action": "recovery_link_now",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "recovery_link_now",
+          "action_after": "recovery_link_now",
+          "reason": "error_reason 'pin_not_set' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": true,
+          "action_before": "recovery_link_now",
+          "action_after": "wait_bank_recovery",
+          "reason": "poisson_surprise (docs/design.md ADR-0003) detected an active incident on this (method, bank) at this event's time; chasing the customer while the bank or rail itself is down is wrong -- deliberately waiting for bank-side recovery instead."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "wait_bank_recovery",
+          "action_after": "wait_bank_recovery",
+          "reason": "candidate action wait_bank_recovery does not represent further spend, so the amount floor does not apply."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "wait_bank_recovery",
+          "action_after": "wait_bank_recovery",
+          "reason": "candidate action wait_bank_recovery is not a further attempt, so the attempt cap does not apply."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "wait_bank_recovery",
+          "action_after": "wait_bank_recovery",
+          "reason": "candidate action wait_bank_recovery does not contact the customer, so the contact cap does not apply."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "wait_bank_recovery",
+          "action_after": "wait_bank_recovery",
+          "reason": "candidate action wait_bank_recovery does not contact the customer, so the cooldown does not apply."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "wait_bank_recovery",
+          "action_after": "wait_bank_recovery",
+          "reason": "candidate action wait_bank_recovery is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "wait_bank_recovery",
+      "ladder_terminal_state": "waiting_on_bank",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='pin_not_set' (tier=deterministic) resolved to remediation_class=customer_fix -> base_action=recovery_link_now. Escalation ladder selected candidate_action=recovery_link_now. active_incident_suppression blocked (recovery_link_now -> wait_bank_recovery): poisson_surprise (docs/design.md ADR-0003) detected an active incident on this (method, bank) at this event's time; chasing the customer while the bank or rail itself is down is wrong -- deliberately waiting for bank-side recovery instead. Final action: wait_bank_recovery."
+    },
+    {
+      "payment_id": "pay_qtzV0yCV7oJ9OS",
+      "order_id": "order_TKqabHl3sZ5xL0",
+      "customer_id": "cust_kc1FgaiX5fdnx5",
+      "method": "wallet",
+      "bank": "ICICI Bank",
+      "amount": 189700,
+      "created_at": "2026-07-23T04:08:37.046616",
+      "attempt_number": 1,
+      "error_reason": "duplicate_refund_id",
+      "remediation_class": "merchant_action",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": false,
+      "base_action": "escalate_human",
+      "candidate_action": "escalate_human",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": true,
+          "action_before": "escalate_human",
+          "action_after": "reconcile",
+          "reason": "error_reason 'duplicate_refund_id' is a known duplicate/already-paid case (derived from the reason code's own taxonomy semantics); continuing toward escalate_human risks contacting the customer about a payment that does not need it, or a duplicate charge -- reconciliation is the correct action, not customer contact or human escalation."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "no active incident detected on this (method, bank) at this event's time."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "candidate action reconcile does not represent further spend, so the amount floor does not apply."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "candidate action reconcile is not a further attempt, so the attempt cap does not apply."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "candidate action reconcile does not contact the customer, so the contact cap does not apply."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "candidate action reconcile does not contact the customer, so the cooldown does not apply."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "reconcile",
+          "action_after": "reconcile",
+          "reason": "candidate action reconcile is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "reconcile",
+      "ladder_terminal_state": "reconciled",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='duplicate_refund_id' (tier=deterministic) resolved to remediation_class=merchant_action -> base_action=escalate_human. Escalation ladder selected candidate_action=escalate_human. terminal_reason_blocklist blocked (escalate_human -> reconcile): error_reason 'duplicate_refund_id' is a known duplicate/already-paid case (derived from the reason code's own taxonomy semantics); continuing toward escalate_human risks contacting the customer about a payment that does not need it, or a duplicate charge -- reconciliation is the correct action, not customer contact or human escalation. Final action: reconcile."
+    },
+    {
+      "payment_id": "pay_Wh5LAP7LJkxO5I",
+      "order_id": "order_zvqFNvm1js8r7h",
+      "customer_id": "cust_c1RYdOcWRxwZxA",
+      "method": "upi",
+      "bank": "IndusInd Bank",
+      "amount": 299900,
+      "created_at": "2026-08-09T11:16:34.817280",
+      "attempt_number": 5,
+      "error_reason": "bank_technical_error",
+      "remediation_class": "different_instrument_or_method",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": true,
+      "base_action": "switch_method",
+      "candidate_action": "escalate_human",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "error_reason 'bank_technical_error' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "an incident is active on this (method, bank), but the candidate action escalate_human does not involve contacting the customer, so no suppression is needed."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "amount 299900 paise is at or above the configured floor of 5000 paise."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": true,
+          "action_before": "escalate_human",
+          "action_after": "no_action",
+          "reason": "attempt 5 exceeds the configured cap of 4; the escalation ladder is exhausted and giving up is the correct terminal state, not silently retrying forever."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action does not contact the customer, so the contact cap does not apply."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action does not contact the customer, so the cooldown does not apply."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "no_action",
+          "action_after": "no_action",
+          "reason": "candidate action no_action is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "no_action",
+      "ladder_terminal_state": "gave_up",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='bank_technical_error' (tier=deterministic) resolved to remediation_class=different_instrument_or_method -> base_action=switch_method. Escalation ladder selected candidate_action=escalate_human. attempt_cap blocked (escalate_human -> no_action): attempt 5 exceeds the configured cap of 4; the escalation ladder is exhausted and giving up is the correct terminal state, not silently retrying forever. Final action: no_action."
+    },
+    {
+      "payment_id": "pay_IeXlD4tbUcOrLD",
+      "order_id": "order_ArtWc6QNhKWEES",
+      "customer_id": "cust_pTsdKd715eRzya",
+      "method": "netbanking",
+      "bank": "State Bank of India",
+      "amount": 517800,
+      "created_at": "2026-07-23T00:00:06.723164",
+      "attempt_number": 1,
+      "error_reason": "recurring_payment_not_enabled",
+      "remediation_class": "merchant_contact_razorpay",
+      "diagnosis_tier": "deterministic",
+      "diagnosis_confidence": "high",
+      "in_active_incident": false,
+      "base_action": "escalate_human",
+      "candidate_action": "escalate_human",
+      "guardrail_evaluations": [
+        {
+          "name": "terminal_reason_blocklist",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "error_reason 'recurring_payment_not_enabled' is not on the terminal/reconcile blocklist."
+        },
+        {
+          "name": "active_incident_suppression",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "no active incident detected on this (method, bank) at this event's time."
+        },
+        {
+          "name": "amount_floor",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "amount 517800 paise is at or above the configured floor of 5000 paise."
+        },
+        {
+          "name": "attempt_cap",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "attempt 1 is within the cap of 4."
+        },
+        {
+          "name": "per_customer_contact_cap",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "candidate action escalate_human does not contact the customer, so the contact cap does not apply."
+        },
+        {
+          "name": "contact_cooldown",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "candidate action escalate_human does not contact the customer, so the cooldown does not apply."
+        },
+        {
+          "name": "quiet_hours",
+          "blocked": false,
+          "action_before": "escalate_human",
+          "action_after": "escalate_human",
+          "reason": "candidate action escalate_human is not an immediate send, so quiet hours do not apply."
+        }
+      ],
+      "final_action": "escalate_human",
+      "ladder_terminal_state": "escalated_to_human",
+      "scheduled_delay_seconds": null,
+      "disallowed_method": null,
+      "justification": "error_reason='recurring_payment_not_enabled' (tier=deterministic) resolved to remediation_class=merchant_contact_razorpay -> base_action=escalate_human. Escalation ladder selected candidate_action=escalate_human. Every guardrail passed; no override was applied. Final action: escalate_human."
+    }
+  ]
+}
