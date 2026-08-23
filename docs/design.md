@@ -810,3 +810,151 @@ benchmark numbers in this ADR), consistent with this project's second governing 
   quiet-hours policy default), or if Razorpay's Payment Links API is ever verified to support
   instrument-level (not just method-level) restriction (which would change the
   `DIFFERENT_INSTRUMENT` mapping from `RECOVERY_LINK_NOW` to a real instrument-restricted send).
+
+### ADR-0006: idempotency by catch-and-recover, not by header; an append-only, hash-chained
+audit trail
+
+**Status:** Accepted (Phase 6)
+
+**Context**
+
+Phase 6 makes this project's first real calls against a live external API and delivers this
+project's audit trail. Two design questions had to be answered honestly, with evidence, before
+writing execution code, per this project's second governing principle: how does bounded execution
+stay idempotent against a Payment Links API that (`BUILD_LOG.md`, 2026-08-22) documents no generic
+idempotency header; and what does an audit trail need to record, and how, to make "we checked and
+it was allowed" as durable and inspectable as a block.
+
+**Idempotency: two live-verified facts shaped the design, and one assumption turned out wrong**
+
+The plan going in was that a deterministic Payment Link `reference_id` (max 40 characters, unique
+per link) would behave like a conventional idempotency key: derive it from the payment id, and a
+retried call with the same key transparently returns the original response. **Verified live,
+2026-08-23, this assumption was wrong.** Creating a second Payment Link with an already-used
+`reference_id` does not return the original link -- it raises `razorpay.errors.BadRequestError`
+with the message `"payment link with given reference_id: <id> already exists. Please create a
+payment link with a different reference_id"`. A deterministic key alone is necessary but not
+sufficient; the caller must also catch this specific rejection and recover the existing resource
+itself. Verified live the same day: `GET /v1/payment_links?reference_id=<id>`
+(`razorpay.Client.payment_link.all({"reference_id": ...})`) does support this lookup, and its
+response envelope is `{"payment_links": [...]}` -- confirmed by direct inspection to differ from
+the generic `{"count": ..., "items": [...]}` shape most other Razorpay list endpoints use, so this
+was read from a real response, not assumed by pattern-matching against other endpoints.
+
+`reflow.execute.reference.derive_reference_id` derives a `"reflow_"` prefix plus 33 hex characters
+(a truncated SHA-256 digest of the payment id) -- always exactly the documented 40-character limit,
+a pure function of the payment id alone. `reflow.execute.gateway.RazorpayGateway.create_payment_link`
+catches exactly the verified duplicate-`reference_id` rejection (matched on the SDK's description
+string, since the SDK exposes nothing more structured -- see below) and recovers the pre-existing
+link via the `reference_id` filter, rather than surfacing it as a failure.
+`reflow.execute.models.ExecutionRecord.idempotent_replay` records when this path fired.
+`tests/execute/test_gateway_live.py::test_duplicate_reference_id_is_recovered_not_duplicated`
+drives this exact path against the real API and is committed as a VCR cassette, so the recovery
+logic is proven against Razorpay's real behaviour, not only against a hand-written mock of it.
+Collision-resistance of the derivation itself is checked empirically:
+`tests/execute/test_reference.py` hashes every `payment_id` in a full 50,000-event generated corpus
+and asserts zero collisions, and `reflow.eval.execute.run_benchmark`'s report repeats this check on
+every run rather than asserting it once and trusting it forever.
+
+**Adaptive backoff is keyed off transport-captured HTTP status, never SDK exception type**
+
+The SDK's own retry (`BUILD_LOG.md`, 2026-08-22) never covers an HTTP error status, and no numeric
+rate limit is published. Live rate-limiting was reproduced organically while developing this phase
+(three rapid sequential Payment Link calls), and the SDK surfaced it as a plain `BadRequestError:
+Too many requests` -- the identical exception type and JSON `error.code`
+(`BAD_REQUEST_ERROR`) a genuine validation error also raises. The exception type alone cannot tell
+"retry me" from "fix your request." `reflow.execute.transport.build_capturing_session` attaches a
+`requests` response hook (deliberately not a `Session` subclass overriding `request()` -- the
+installed `requests` stub's `Session.request` signature is fully, specifically typed, and a
+permissive `**kwargs` override would be an LSP-incompatible override under `mypy --strict`;
+`Session.hooks["response"]` is `requests`' own documented, type-compatible extension point for
+exactly this) that records the real HTTP status code and full JSON error body the SDK parses and
+discards. `reflow.execute.gateway.RazorpayGateway._call_with_retry` retries only when the
+*captured* status code is 429 or 5xx, with exponential backoff plus jitter, and raises
+`ApiCallFailedError` (carrying the full captured error body, including any
+`field`/`source`/`step`/`reason`/`metadata` the SDK's own exception would have discarded)
+otherwise.
+
+**The audit trail: one flat record per decision, an explicit verdict for every guardrail, a cheap
+hash chain**
+
+`reflow.audit.record.AuditRecord` is assembled from shapes that already existed for other reasons
+-- `reflow.corpus.events.PaymentEvent` (the full `(code, source, step, reason)` group, which
+`Decision` alone does not carry), `reflow.policy.decision.Decision` (diagnosis, guardrail chain,
+final action -- ADR-0005's own consequences section anticipated persisting exactly this),
+`reflow.diagnose.router.EventDiagnosis` (for `rationale`), and
+`reflow.execute.models.ExecutionRecord` (execution outcome). Every guardrail's verdict is recorded
+whether it blocked or passed, matching the phase brief's "record passes, not just blocks"
+literally: `reflow.audit.record._guardrail_evaluations_payload` copies
+`Decision.guardrail_evaluations` verbatim, and nothing in this pipeline drops a passing verdict
+before it reaches the trail.
+
+Tamper evidence is a chained SHA-256 hash (`reflow.audit.record.compute_record_hash`: each record
+hashes its own fields plus the *previous* record's hash), not a cryptographic signature or an
+external ledger -- the cheap option the phase brief explicitly calls for ("tamper-evident if cheap
+to do"), and documented plainly (`reflow.audit.store` module docstring) as detection, not
+prevention: a flat file editable by anyone with filesystem access cannot be made tamper-*proof* by
+hashing alone. `reflow.audit.store.verify_chain` recomputes every hash independently and reports
+the first broken link. `reflow.audit.store.AuditTrailWriter` only ever opens its target file in
+append (`"a"`) mode and never seeks backward; resuming an existing trail reads only its last line to
+recover the chain tip and next sequence number. Every record round-trips through
+`reflow.audit.record.to_dict`/`record_from_dict`, always serialised with `sort_keys=True`, so two
+runs over the same input produce byte-identical JSONL lines -- "stable enough to diff" by
+construction.
+
+**The committed audit trail is a bounded sample, not the full corpus, stated plainly**
+
+ADR-0005's consequences section anticipated Phase 6 persisting "every `Decision` this engine
+produces." `reflow.eval.execute.run_benchmark` supports exactly that (`audit_sample_size=None`).
+The report this project actually commits uses a bounded, representative sample instead (500 leading
+chronological events, plus a guaranteed first example of every guardrail block and every final
+action, from a real run of the same pipeline) -- a full 50,000-record JSONL trail is tens of
+megabytes for no added demonstration value over a smaller, still-genuinely-generated sample, and
+shipping it silently under an "every decision" framing without saying so would misrepresent what is
+committed.
+
+**Decision**
+
+Idempotency is deterministic-key-plus-catch-and-recover, not deterministic-key-alone, because the
+latter was verified live to fail. Backoff decisions are keyed off transport-captured HTTP status,
+never SDK exception type, because the two were verified live to be indistinguishable by type alone.
+The audit trail is one flat, hash-chained, append-only JSONL record per decision, recording every
+guardrail's verdict whether it passed or blocked, replayable by `reflow replay <payment_id>` from
+nothing but the trail file itself.
+
+**Alternatives considered and rejected**
+
+- **Assume `reference_id` behaves like a conventional idempotency key (silent replay) without
+  verifying.** Rejected: exactly the failure mode this project's culture exists to catch --
+  verified live instead, and the assumption was wrong.
+- **Classify retryability from the SDK's exception type.** Rejected: verified live that a genuine
+  rate limit and a genuine bad request both raise `BadRequestError` with `code=BAD_REQUEST_ERROR`;
+  only the real HTTP status code (429 vs. 400), available only via transport-level capture, tells
+  them apart.
+- **A `Session` subclass overriding `request()` for transport capture.** Rejected in favour of a
+  response hook: the installed `requests` stub's `Session.request` signature is fully, specifically
+  typed, and a permissive `**kwargs` override would violate it under `mypy --strict`;
+  `Session.hooks["response"]` is `requests`' own documented, type-compatible extension point for
+  exactly this need.
+- **A cryptographic signature or external ledger for tamper evidence.** Rejected as disproportionate
+  to the phase brief's own "if cheap to do" qualifier; a chained hash gives detectable tamper
+  evidence at a fraction of the complexity, honestly labelled as detection rather than prevention.
+- **Persist the full 50,000-decision audit trail as the committed artifact.** Rejected for
+  repository size with no added demonstration value; the code path exists
+  (`audit_sample_size=None`) for a caller who wants it, and the committed report states the
+  sampling plainly rather than implying completeness.
+
+**Consequences**
+
+- A future Payment Links idempotency-header release from Razorpay (should one ever ship) would let
+  `reflow.execute.gateway` drop the catch-and-recover path in favour of a header; until then, every
+  duplicate-create attempt costs one extra API call (the recovery lookup) beyond what a true
+  idempotency key would need.
+- The duplicate-`reference_id` detection matches on the SDK's description *string*, since the SDK
+  surfaces nothing more structured -- a future wording change on Razorpay's side could silently stop
+  this path from firing. Recorded here as a real fragility, not hidden.
+- This decision is revisited if Razorpay ships a documented idempotency mechanism for Payment Link
+  creation, or if a production deployment's audit trail volume makes the flat-JSONL-plus-chained
+  -hash design's linear resume/verify cost (reading every prior line to find the chain tip) a real
+  bottleneck -- at that point a database-backed or periodically-checkpointed design would be the
+  natural next step, not built here on speculation.

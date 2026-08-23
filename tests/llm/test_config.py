@@ -29,3 +29,8 @@ def test_llm_config_never_defaults_a_model() -> None:
     config = LlmConfig(model="deepseek/deepseek-v4-flash", api_key="k")
     assert config.model == "deepseek/deepseek-v4-flash"
     assert config.reasoning_effort is None
+
+
+def test_llm_config_repr_never_exposes_the_api_key() -> None:
+    config = LlmConfig(model="deepseek/deepseek-v4-flash", api_key="super-secret-value")
+    assert "super-secret-value" not in repr(config)
