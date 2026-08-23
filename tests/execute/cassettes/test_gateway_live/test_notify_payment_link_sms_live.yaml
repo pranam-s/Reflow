@@ -1,0 +1,108 @@
+interactions:
+- request:
+    body: '{"amount": 9900, "currency": "INR", "description": "reflow phase6 live
+      verification -- notify sms", "reference_id": "reflow_live_notify_sms_0001",
+      "customer": {"name": "Reflow Live Test Customer", "contact": "+919876500004",
+      "email": "reflow.live.notify.sms@example.com"}, "notify": {"sms": false, "email":
+      false}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '314'
+      Content-type:
+      - application/json
+      User-Agent:
+      - 'Razorpay-Python/2.0.1 '
+    method: POST
+    uri: https://api.razorpay.com/v1/payment_links
+  response:
+    body:
+      string: '{"accept_partial":false,"allow_full_payment":false,"amount":9900,"amount_paid":0,"cancelled_at":0,"created_at":1787443816,"currency":"INR","customer":{"contact":"+919876500004","email":"reflow.live.notify.sms@example.com","name":"Reflow
+        Live Test Customer"},"description":"reflow phase6 live verification -- notify
+        sms","expire_by":0,"expired_at":0,"first_min_partial_amount":0,"id":"plink_TT0ZyK18wSt4UU","notes":null,"notify":{"email":false,"sms":false,"whatsapp":false},"payment_plan":false,"payments":null,"reference_id":"reflow_live_notify_sms_0001","reminder_enable":false,"reminders":[],"short_url":"https:\/\/rzp.io\/rzp\/TETxP8X","status":"created","updated_at":1787443816,"upi_link":false,"user_id":"","whatsapp_link":false}'
+    headers:
+      Cache-Control:
+      - max-age=0, must-revalidate, no-store, nocache, private
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sun, 23 Aug 2026 00:10:16 GMT
+      Expires:
+      - Fri, 01 Jan 1990 00:00:00 GMT
+      Pragma:
+      - no-cache
+      Strict-Transport-Security:
+      - max-age=315360000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Uber-Trace-Id:
+      - 288e0c2271d66d8f5ec710f7d8941fda:9cf2b4c4cec8b43a:0000000000000000:1
+      Via:
+      - rws
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Pam:
+      - '0'
+      X-Xss-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '2'
+      Content-type:
+      - application/json
+      User-Agent:
+      - 'Razorpay-Python/2.0.1 '
+    method: POST
+    uri: https://api.razorpay.com/v1/payment_links/plink_TT0ZyK18wSt4UU/notify_by/sms
+  response:
+    body:
+      string: '{"success":true}'
+    headers:
+      Cache-Control:
+      - max-age=0, must-revalidate, no-store, nocache, private
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sun, 23 Aug 2026 00:10:16 GMT
+      Expires:
+      - Fri, 01 Jan 1990 00:00:00 GMT
+      Pragma:
+      - no-cache
+      Strict-Transport-Security:
+      - max-age=315360000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Uber-Trace-Id:
+      - f38db2cf2424dddc8884ebb5610efe5f:0045ac232af487fc:0000000000000000:1
+      Via:
+      - rws
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Pam:
+      - '0'
+      X-Xss-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1

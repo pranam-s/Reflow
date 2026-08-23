@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from reflow.llm.errors import MissingApiKeyError
 
@@ -56,7 +56,14 @@ class LlmConfig:
     Attributes:
         model: OpenRouter model slug (e.g. ``"deepseek/deepseek-v4-flash"``),
             chosen entirely by the caller.
-        api_key: OpenRouter API key, e.g. from :func:`load_api_key`.
+        api_key: OpenRouter API key, e.g. from :func:`load_api_key`. Excluded
+            from this dataclass's ``repr`` (``field(repr=False)``, added in
+            Phase 6 after a live Razorpay credential was found to leak
+            through an analogous dataclass's default ``repr`` in an
+            uncaught exception's traceback -- see
+            :class:`reflow.execute.gateway.RazorpayGateway`'s
+            ``key_secret`` field docstring) so constructing, logging, or an
+            uncaught exception printing this object can never echo it.
         reasoning_effort: Forwarded verbatim to the OpenRouter SDK's
             top-level ``reasoning_effort`` shorthand (equivalent to
             ``reasoning.effort``; see
@@ -88,7 +95,7 @@ class LlmConfig:
     """
 
     model: str
-    api_key: str
+    api_key: str = field(repr=False)
     reasoning_effort: str | None = None
     max_completion_tokens: int = 1024
     temperature: float | None = 0.0

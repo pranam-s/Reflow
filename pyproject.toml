@@ -12,8 +12,13 @@ dependencies = [
     "openpyxl>=3.1.5",
     "openrouter>=0.10.8",
     "pydantic>=2.13.4",
+    "razorpay>=2.0.1",
+    "rich>=15.0.0",
     "scikit-learn>=1.9.0",
 ]
+
+[project.scripts]
+reflow = "reflow.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
@@ -25,6 +30,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-recording>=0.13.4",
+    "responses>=0.26.2",
     "ruff>=0.16.4",
     "ty>=0.0.74",
     "types-openpyxl>=3.1.5.20260807",
@@ -54,7 +60,7 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = ["sklearn.*", "drain3.*"]
+module = ["sklearn.*", "drain3.*", "razorpay.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.ty.environment]

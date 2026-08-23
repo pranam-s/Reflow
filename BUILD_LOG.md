@@ -453,3 +453,172 @@ instrument-level restriction is ever needed, which the action set does not requi
 prompt to go read the primary reference rather than to pick a side. Had this been resolved by trusting
 the more recent agent, the reasoning would have been right by luck. It also means Phase 6 implements
 against a verified shape instead of a plausible one.
+
+### A live Razorpay credential leaked through a dataclass's default `repr` in an uncaught traceback
+
+**What.** While recording Phase 6's live-verification cassettes, one test (`notify_email`) hit a real
+rate limit and raised uncaught. Pytest's traceback printer shows every local variable's `repr()` for the
+failing frame, and `RazorpayGateway` was a plain `@dataclass` with no `repr=False` on `key_id`/
+`key_secret` -- so the traceback printed both the real test-mode key id and key secret in plain text into
+this session's tool output.
+
+**Evidence.** The traceback line read `self = RazorpayGateway(key_id='...', key_secret='...', ...)` with
+both fields fully populated. Confirmed by inspecting `RazorpayGateway`'s dataclass field declarations
+directly: neither credential field excluded itself from `repr`.
+
+**Consequence.** Both `key_secret` fixed immediately (`field(repr=False)`) in
+`reflow.execute.gateway.RazorpayGateway`, and, on the same principle, `reflow.llm.config.LlmConfig.api_key`
+(a pre-existing Phase 4 field with the identical latent exposure, never actually triggered before now) --
+fixed defensively rather than left as a known-but-unexercised risk. Regression tests assert `repr()` never
+contains either secret (`tests/execute/test_gateway.py::test_gateway_repr_never_exposes_the_key_secret`,
+`tests/llm/test_config.py::test_llm_config_repr_never_exposes_the_api_key`). The exposed key is a
+Razorpay **test-mode** credential (per Razorpay's own model, test-mode entities and credentials are
+entirely separate from live and move no real money), so this is not a live-payments exposure, but it is a
+real credential leak and the test-mode key involved should still be rotated in the Razorpay dashboard as a
+precaution; this report does not repeat the value anywhere.
+
+**Why it matters.** This is exactly the failure mode CLAUDE.md's "never echo a value" rule exists to
+prevent, and it happened through a code path (an uncaught exception's default object `repr`) that has
+nothing to do with logging or printing credentials on purpose -- a reminder that credential-bearing
+dataclasses need `repr=False` on the sensitive field by construction, not only "don't print it" discipline
+at every call site.
+
+### Razorpay's Payment Link `reference_id` is a uniqueness constraint, not a Stripe-style idempotent replay
+
+**What.** The plan assumed a deterministic `reference_id` alone would behave like a conventional
+idempotency key: retry with the same key, get the same response back.
+
+**Evidence.** Verified live, 2026-08-23: creating a second Payment Link with an already-used
+`reference_id` raises `razorpay.errors.BadRequestError`: `"payment link with given reference_id: <id>
+already exists. Please create a payment link with a different reference_id"`. It does not return the
+original link. Also verified live the same session: `GET /v1/payment_links?reference_id=<id>`
+(`razorpay.Client.payment_link.all({"reference_id": ...})`) does support this exact filter, and its
+response is `{"payment_links": [...]}` -- a different envelope shape than the generic
+`{"count": ..., "items": [...]}` most other Razorpay list endpoints use, confirmed by reading the actual
+response rather than assumed from the pattern other endpoints follow.
+
+**Consequence.** `reflow.execute.gateway.RazorpayGateway.create_payment_link` implements catch-and-recover:
+on the specific duplicate-`reference_id` rejection, it looks the existing link up via the `reference_id`
+filter and returns it (`GatewayCallResult.recovered_existing=True`) rather than treating the rejection as
+a failure. Recorded as ADR-0006 in `docs/design.md`. `tests/execute/test_gateway_live.py::
+test_duplicate_reference_id_is_recovered_not_duplicated` drives this exact path against the real API.
+
+### The SDK's error-code classification cannot distinguish a genuine bad request from a live rate limit
+
+**What.** While probing the API by hand (three rapid sequential Payment Link calls), a real rate limit
+was tripped organically, not manufactured.
+
+**Evidence.** The SDK raised `razorpay.errors.BadRequestError: Too many requests` -- the identical
+exception class and JSON `error.code` (`BAD_REQUEST_ERROR`) a genuine validation error also raises,
+confirmed by reading `razorpay/client.py`'s `request()` method directly: it classifies purely off
+`error.code`, never the HTTP status. Re-confirmed with transport-level capture during cassette recording
+(`tests/execute/cassettes/test_gateway_live/test_notify_payment_link_email_live.yaml`'s first, later
+-replaced interaction recorded the real HTTP status: 429).
+
+**Consequence.** `reflow.execute.gateway.RazorpayGateway` never branches on SDK exception type for
+retry decisions; it branches on the transport-captured real HTTP status code
+(`reflow.execute.transport.build_capturing_session`), which is the only thing that actually distinguishes
+the two cases. Recorded as part of ADR-0006.
+
+### `vcrpy` needed `decode_compressed_response=True`, or every Razorpay cassette body would be an unreadable gzip blob
+
+**What.** The first cassette recorded without this option stored its response body as `!!binary |`
+base64-encoded gzip data (the same shape already seen in `tests/llm/cassettes/`), which is both
+unreadable for the "verify by reading each committed cassette" requirement and unparseable by a plain
+`json.loads` in `reflow.eval.execute._extract_cassette_interactions`.
+
+**Evidence.** Read `vcr/config.py` directly: `decode_compressed_response` (default `False`) is a real,
+supported option that decodes the response body before it is ever written to the cassette.
+
+**Consequence.** `tests/execute/conftest.py`'s `vcr_config` fixture sets it explicitly. Every cassette
+under `tests/execute/cassettes/test_gateway_live/` stores its response bodies as plain, human-readable
+JSON text, verified by reading each one directly.
+
+### Method-restriction acceptance cannot be confirmed from the API's own responses alone
+
+**What.** After live-verifying (2026-08-23, `docs/design.md`'s Phase 5 ADR) that `options.checkout.method`
+is the documented mechanism for restricting a Payment Link's payment methods, this phase tried to also
+verify mechanically, via the API, that a restriction actually took effect.
+
+**Evidence.** A Payment Link created with `options.checkout.method.upi=false` returned a create response
+whose `options` field contained only `{"checkout": {"name": ""}}` -- no echo of the `method` restriction
+at all -- and a subsequent `fetch` of the same link returned `options: null` entirely.
+
+**Consequence.** This project cannot claim, from API responses alone, that a method restriction visibly
+took effect on the rendered checkout page -- that would require opening the real checkout URL in a
+browser, which is out of scope for this automated harness. What is verified is narrower and stated
+plainly: Razorpay's API accepts the documented request shape without error
+(`tests/execute/test_gateway_live.py::test_create_method_restricted_payment_link_live`), not that the
+restriction is confirmed to render. This gap is disclosed here and in `docs/reports/phase6_execution.md`
+rather than overclaimed.
+
+### `ty` flags `razorpay.Client.payment_link` as unresolved, for the same reason it already flags `drain3`
+
+**What.** `uv run ty check .` reports four `unresolved-attribute` findings against
+`self._client.payment_link` in `reflow.execute.gateway`.
+
+**Evidence.** Read `razorpay/client.py` directly: every resource (`payment_link`, `payment`, `order`, ...)
+is attached with `setattr(self, name, Klass(self))` inside `Client.__init__`, driven by a
+`RESOURCE_CLASSES` dict built from module introspection at import time -- never declared as a static
+class-level attribute or in a stub. `ty`'s static analysis has no way to see an attribute assigned this
+dynamically, the same class of limitation already recorded in this log for `drain3.TemplateMiner`'s
+`persistence_handler` parameter.
+
+**Consequence.** Left as-is, per ADR-0001: `ty` is advisory only and never drives a rewrite of correct
+code (verified against the installed SDK's real, intended calling convention -- `Client(session=...,
+auth=...)` then `.payment_link.create(...)`, exactly as `razorpay`'s own README and every other resource
+in this codebase's dependency tree is used) to satisfy a third-party library's own dynamically-typed
+shape. `mypy` -- the blocking gate -- has no issue here at all, since `razorpay.*` is listed under
+`ignore_missing_imports` in `pyproject.toml`, which is the correct treatment for an unstubbed dependency.
+
+### A live credential printed itself into a traceback
+
+**What.** `RazorpayGateway` was a plain dataclass holding `key_id` and `key_secret`. An uncaught
+exception during development produced a pytest traceback that rendered the dataclass `repr`, printing a
+live Razorpay test-mode secret in plain text.
+
+**Evidence.** Python's generated `__repr__` includes every field by default. Nothing in the code was
+"logging a secret" — the exposure came free with the dataclass.
+
+**Consequence.** `field(repr=False)` on `key_secret`, and defensively on `reflow.llm.config.LlmConfig.api_key`,
+which carried the identical latent exposure from Phase 4 and had simply never been triggered. Regression
+tests assert both. Verified afterwards: the credential appears nowhere in the working tree and nowhere in
+git history, and the whole suite passes with every credential unset.
+
+**Why it is worth recording.** The dangerous ones are not the secrets you print, they are the ones a
+default `__repr__` prints for you when something else goes wrong. Any dataclass holding a credential
+needs `repr=False` at the moment it is written, not after an exception finds it. This was a test-mode
+key with no money at risk, and it should still be rotated.
+
+### reference_id is not an idempotency key, and finding that out required trying it
+
+**What.** The design used a deterministic Payment Link `reference_id` as an idempotency key, on the
+assumption that resubmitting one would return the original link — Stripe-style.
+
+**Evidence.** Live test-mode call: Razorpay **rejects** the second request outright with
+`"...already exists. Please create a payment link with a different reference_id"`. It does not replay.
+
+**Consequence.** A catch-and-recover path instead: on that specific rejection, fetch the existing link
+rather than treating it as failure. Verified live and committed as a cassette. Recorded in ADR-0006 so
+the distinction between "idempotent" and "unique-constrained" is explicit.
+
+### The SDK cannot tell a rate limit from a bad request
+
+**What.** Adaptive backoff needs to distinguish 429 from 400. Both surface identically.
+
+**Evidence.** Discovered by organically tripping a real 429 while probing the API. The SDK raises
+`BadRequestError` with `code=BAD_REQUEST_ERROR` for both; only the transport-level HTTP status
+distinguishes them, and the SDK discards that too.
+
+**Consequence.** Backoff keys off the transport-captured status code, not the exception type. This is
+the second distinct consequence of the same root cause recorded earlier: the SDK parses rich error
+information and throws it away.
+
+### Two smaller live findings
+
+- **`payment_link.all()` returns `{"payment_links": [...]}`**, not the generic `{"count", "items"}`
+  envelope Razorpay uses for other collections. Confirmed live rather than assumed.
+- **`SWITCH_METHOD`'s restriction cannot be mechanically proven to render.** The create response echoes
+  only `{"checkout": {"name": ""}}` and fetch returns `options: null`. The API accepts the request, but
+  confirming the checkout page visibly restricts methods would need a real browser. Disclosed rather
+  than claimed.

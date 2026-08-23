@@ -1,0 +1,160 @@
+interactions:
+- request:
+    body: '{"amount": 29900, "currency": "INR", "description": "reflow phase6 live
+      verification -- idempotency probe", "reference_id": "reflow_live_idempotent_0001",
+      "customer": {"name": "Reflow Live Test Customer", "contact": "+919876500002",
+      "email": "reflow.live.idempotent@example.com"}, "notify": {"sms": false, "email":
+      false}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '322'
+      Content-type:
+      - application/json
+      User-Agent:
+      - 'Razorpay-Python/2.0.1 '
+    method: POST
+    uri: https://api.razorpay.com/v1/payment_links
+  response:
+    body:
+      string: '{"accept_partial":false,"allow_full_payment":false,"amount":29900,"amount_paid":0,"cancelled_at":0,"created_at":1787443812,"currency":"INR","customer":{"contact":"+919876500002","email":"reflow.live.idempotent@example.com","name":"Reflow
+        Live Test Customer"},"description":"reflow phase6 live verification -- idempotency
+        probe","expire_by":0,"expired_at":0,"first_min_partial_amount":0,"id":"plink_TT0ZukO5RmwdTF","notes":null,"notify":{"email":false,"sms":false,"whatsapp":false},"payment_plan":false,"payments":null,"reference_id":"reflow_live_idempotent_0001","reminder_enable":false,"reminders":[],"short_url":"https:\/\/rzp.io\/rzp\/DKbJKo0I","status":"created","updated_at":1787443812,"upi_link":false,"user_id":"","whatsapp_link":false}'
+    headers:
+      Cache-Control:
+      - max-age=0, must-revalidate, no-store, nocache, private
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sun, 23 Aug 2026 00:10:13 GMT
+      Expires:
+      - Fri, 01 Jan 1990 00:00:00 GMT
+      Pragma:
+      - no-cache
+      Strict-Transport-Security:
+      - max-age=315360000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Uber-Trace-Id:
+      - 8600e3c3bde3e44ef09a2e2e32bbe630:7e67f416d08e2e58:0000000000000000:1
+      Via:
+      - rws
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Pam:
+      - '0'
+      X-Xss-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"amount": 29900, "currency": "INR", "description": "reflow phase6 live
+      verification -- idempotency probe", "reference_id": "reflow_live_idempotent_0001",
+      "customer": {"name": "Reflow Live Test Customer", "contact": "+919876500002",
+      "email": "reflow.live.idempotent@example.com"}, "notify": {"sms": false, "email":
+      false}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '322'
+      Content-type:
+      - application/json
+      User-Agent:
+      - 'Razorpay-Python/2.0.1 '
+    method: POST
+    uri: https://api.razorpay.com/v1/payment_links
+  response:
+    body:
+      string: '{"error":{"code":"BAD_REQUEST_ERROR","description":"payment link with
+        given reference_id: reflow_live_idempotent_0001 already exists. Please create
+        a payment link with a different reference_id","metadata":[],"reason":null,"source":null,"step":null}}'
+    headers:
+      Cache-Control:
+      - max-age=0, must-revalidate, no-store, nocache, private
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sun, 23 Aug 2026 00:10:13 GMT
+      Expires:
+      - Fri, 01 Jan 1990 00:00:00 GMT
+      Pragma:
+      - no-cache
+      Strict-Transport-Security:
+      - max-age=315360000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Uber-Trace-Id:
+      - 89a37a2a64ce4ec508aeb5167f5cd45d:dac69a4b9e6e0e79:0000000000000000:1
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Pam:
+      - '0'
+      X-Xss-Protection:
+      - '0'
+    status:
+      code: 400
+      message: Bad Request
+- request:
+    body: null
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate
+      Connection:
+      - keep-alive
+      User-Agent:
+      - 'Razorpay-Python/2.0.1 '
+    method: GET
+    uri: https://api.razorpay.com/v1/payment_links?reference_id=reflow_live_idempotent_0001
+  response:
+    body:
+      string: '{"payment_links":[{"accept_partial":false,"allow_full_payment":false,"amount":29900,"amount_paid":0,"cancelled_at":0,"created_at":1787443812,"currency":"INR","customer":{"contact":"+919876500002","email":"reflow.live.idempotent@example.com","name":"Reflow
+        Live Test Customer"},"description":"reflow phase6 live verification -- idempotency
+        probe","expire_by":0,"expired_at":0,"first_min_partial_amount":0,"id":"plink_TT0ZukO5RmwdTF","notes":[],"notify":{"email":false,"sms":false,"whatsapp":false},"payment_plan":false,"payments":null,"reference_id":"reflow_live_idempotent_0001","reminder_enable":false,"reminders":[],"short_url":"https:\/\/rzp.io\/rzp\/DKbJKo0I","status":"created","updated_at":1787443812,"upi_link":false,"user_id":"","whatsapp_link":false}]}'
+    headers:
+      Cache-Control:
+      - max-age=0, must-revalidate, no-store, nocache, private
+      Connection:
+      - keep-alive
+      Content-Type:
+      - application/json
+      Date:
+      - Sun, 23 Aug 2026 00:10:14 GMT
+      Expires:
+      - Fri, 01 Jan 1990 00:00:00 GMT
+      Pragma:
+      - no-cache
+      Strict-Transport-Security:
+      - max-age=315360000; includeSubDomains
+      Transfer-Encoding:
+      - chunked
+      Uber-Trace-Id:
+      - 31e08bd8b052bea8f6242cee6e604dea:d69220bbdd477b5c:0000000000000000:1
+      Via:
+      - rws
+      X-Frame-Options:
+      - SAMEORIGIN
+      X-Pam:
+      - '0'
+      X-Xss-Protection:
+      - '0'
+    status:
+      code: 200
+      message: OK
+version: 1
