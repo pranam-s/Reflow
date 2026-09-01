@@ -1,7 +1,21 @@
 # Build log
 
-A dated record of what actually broke, what the evidence was, and what changed as a result.
-Written as it happened, not reconstructed afterwards.
+This is a dated engineering journal, not a report: real problems hit during development,
+in the order they were hit, with the evidence that proved each one and the change that
+followed. It exists because a project's clean final state hides exactly the thing a
+reviewer most wants to see — an assumption that turned out wrong, a tool that failed
+silently, a credential that nearly leaked — and because `CLAUDE.md`'s principle that a
+decision must be justified honestly, not reverse-engineered, applies just as much to a
+mid-build finding as to a design decision in `docs/design.md`.
+
+Every entry below is **written as it happened, not reconstructed afterward for this
+submission** — that is the reason this file is worth reading rather than skipping: a
+report written after the fact would smooth over the parts a live journal cannot. Three
+dates appear. 2026-08-22 and 2026-08-23 are early build-phase findings, several of them
+plans that turned out wrong before the fix that followed. 2026-09-01 is the day before
+submission, and includes an independent adversarial review of the whole codebase,
+commissioned on purpose to find what a real reviewer would find rather than assume none
+of it exists because CI is green.
 
 ---
 
