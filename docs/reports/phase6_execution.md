@@ -1,11 +1,11 @@
 # Phase 6 bounded-execution benchmark results
 
-- Generated at: 2026-08-23T00:34:21+00:00
+- Generated at: 2026-09-01T08:23:06+00:00
 - Command: `uv run python -m reflow.eval.execute`
 - Seed: 20260822
 - Corpus size: 50000
-- Phase 4 report: `L:\projects\buildathon\Reflow\docs\reports\phase4_diagnosis.json`
-- Library versions: pydantic=2.13.4, python=3.11.15, razorpay=2.0.1, reflow=0.1.0, rich=15.0.0
+- Phase 4 report: `docs/reports/phase4_diagnosis.json`
+- Library versions: pydantic=2.12.5, python=3.11.15, razorpay=2.0.1, reflow=0.1.0, rich=15.0.0
 - Note: This benchmark always runs the bounded executor in dry-run mode: no Razorpay credentials are imported and no network call is ever made here. Every EXECUTED outcome anywhere in this project's test suite comes from a committed VCR cassette recorded once against the real API, never from this benchmark.
 - Note: Diagnoses are loaded from Phase 4's already-committed report at zero marginal LLM cost, exactly as reflow.eval.policy does -- see reflow.policy.diagnosis_source module docstring.
 - Note: reference_id collision-freedom is checked directly against every payment_id in the generated corpus, not merely asserted from the birthday-bound arithmetic.
@@ -28,7 +28,7 @@
 
 ## Persisted audit trail (bounded, representative sample)
 
-- Path: `L:\projects\buildathon\Reflow\docs\reports\phase6_audit_trail.jsonl`
+- Path: `docs/reports/phase6_audit_trail.jsonl`
 - Records persisted: **503**
 - Hash chain valid: **True**
 
@@ -52,7 +52,7 @@ Example `reflow replay <payment_id>` arguments:
 
 ## Live test-mode verification (evidence, not re-executed here)
 
-- Cassette directory: `L:\projects\buildathon\Reflow\tests\execute\cassettes\test_gateway_live`
+- Cassette directory: `tests/execute/cassettes/test_gateway_live`
 - Cassette files: **5**
 - Recorded HTTP interactions: **9**
 - Real `short_url` values observed:

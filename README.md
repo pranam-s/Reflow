@@ -336,7 +336,12 @@ primary or secondary.
 - **`README.md`** (this file) — the five-minute read.
 - **`docs/design.md`** — every architectural decision as an ADR (context, evidence,
   decision, rejected alternatives, consequences), plus the same two Mermaid diagrams
-  embedded (identical to `docs/diagrams/`) and the external-citations section.
+  embedded (identical to `docs/diagrams/`), the external-citations section, and a "Known
+  technical debt" section naming what an adversarial review of this codebase found and
+  did not fix, with the reasoning either way — `eval/`'s seven independently-duplicated
+  report generators, three stringly-typed report parsers where every other boundary uses
+  `pydantic`, `policy` quietly sourcing 15 diagnoses from a committed evaluation artefact,
+  and an inconsistent exception hierarchy across packages.
 - **`docs/reports/`** — the raw, committed output of every benchmark and simulation this
   project ran, in matched `.json`/`.md` pairs, plus the accessible HTML pipeline report
   (`phase8_report.html`) and the sampled audit trail (`phase6_audit_trail.jsonl`). This is

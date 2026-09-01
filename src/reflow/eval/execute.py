@@ -68,6 +68,26 @@ DEFAULT_LIVE_CASSETTE_DIR: Final[Path] = (
     _REPO_ROOT / "tests" / "execute" / "cassettes" / "test_gateway_live"
 )
 
+
+def _relative_path(path: Path) -> str:
+    """Render a path relative to the repository root, for report output.
+
+    Args:
+        path: The path to render.
+
+    Returns:
+        ``path`` relative to :data:`_REPO_ROOT`, with forward slashes
+        regardless of host OS, so a committed report never discloses the
+        generating machine's absolute filesystem layout. Falls back to
+        ``str(path)`` unchanged if ``path`` does not resolve to somewhere
+        under :data:`_REPO_ROOT`.
+    """
+    try:
+        return path.resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 PROVENANCE_NOTES: Final[tuple[str, ...]] = (
     "This benchmark always runs the bounded executor in dry-run mode: no Razorpay credentials "
     "are imported and no network call is ever made here. Every EXECUTED outcome anywhere in "
@@ -316,7 +336,7 @@ def _live_verification(cassette_dir: Path = DEFAULT_LIVE_CASSETTE_DIR) -> LiveVe
             short_urls.add(parsed["short_url"])
     n_files = len(list(cassette_dir.glob("*.yaml"))) if cassette_dir.is_dir() else 0
     return LiveVerificationSummary(
-        cassette_dir=str(cassette_dir),
+        cassette_dir=_relative_path(cassette_dir),
         n_cassette_files=n_files,
         n_interactions=len(interactions),
         short_urls=tuple(sorted(short_urls)),
@@ -414,7 +434,7 @@ def run_benchmark(
         generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         seed=seed,
         n_events=n_events,
-        phase4_report_path=str(phase4_report_path),
+        phase4_report_path=_relative_path(phase4_report_path),
         command="uv run python -m reflow.eval.execute",
         library_versions=_library_versions(),
         notes=PROVENANCE_NOTES,
@@ -424,7 +444,7 @@ def run_benchmark(
         n_events_evaluated=len(events),
         dry_run_outcome_counts=outcome_counts,
         reference_id_check=reference_id_check,
-        audit_trail_path=str(audit_trail_path),
+        audit_trail_path=_relative_path(audit_trail_path),
         n_audit_records_persisted=len(persisted_records),
         audit_chain_valid=chain_result.valid,
         example_payment_ids=example_payment_ids,

@@ -136,6 +136,26 @@ DEFAULT_N_EVENTS: Final[int] = 50_000
 
 _REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[3]
 
+
+def _relative_path(path: Path) -> str:
+    """Render a path relative to the repository root, for report output.
+
+    Args:
+        path: The path to render.
+
+    Returns:
+        ``path`` relative to :data:`_REPO_ROOT`, with forward slashes
+        regardless of host OS, so a committed report never discloses the
+        generating machine's absolute filesystem layout. Falls back to
+        ``str(path)`` unchanged if ``path`` does not resolve to somewhere
+        under :data:`_REPO_ROOT`.
+    """
+    try:
+        return path.resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
 _ATTEMPT_ACTIONS: Final[frozenset[Action]] = frozenset(LADDER_ORDER)
 """Every action that represents a genuine, escalatable attempt: the three
 chase actions plus escalation to a human. See module docstring."""
@@ -581,7 +601,7 @@ def run_closed_loop(
         generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
         seed=seed,
         n_events=n_events,
-        phase4_report_path=str(phase4_report_path),
+        phase4_report_path=_relative_path(phase4_report_path),
         sensitivity_levels=tuple(level.value for level in SensitivityLevel),
         command="uv run python -m reflow.eval.simulate",
         library_versions=_library_versions(),

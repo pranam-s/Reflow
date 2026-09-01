@@ -2,12 +2,12 @@
 
 **Every number below is a simulated outcome scored by a seeded oracle, not an observed real-world recovery.** See `docs/reports/phase7_evaluation.md` for the full honesty statement.
 
-- Generated at: 2026-09-01T02:38:18+00:00
+- Generated at: 2026-09-01T08:23:46+00:00
 - Command: `uv run python -m reflow.eval.simulate`
 - Seed: 20260822
 - Corpus size: 50000
-- Phase 4 report: `L:\projects\buildathon\Reflow\docs\reports\phase4_diagnosis.json`
-- Library versions: pydantic=2.13.4, python=3.11.15, reflow=0.1.0
+- Phase 4 report: `docs/reports/phase4_diagnosis.json`
+- Library versions: pydantic=2.12.5, python=3.11.15, reflow=0.1.0
 - Note: Every recovery outcome in this report is scored by the seeded, deterministic reflow.outcome.oracle.RecoveryOracle, never observed from a real customer or a live Razorpay call -- see that module's docstring and docs/reports/phase7_evaluation.md for the full honesty statement this project makes about what these numbers do and do not mean.
 - Note: Diagnoses are loaded from Phase 4's already-committed report at zero marginal LLM cost, exactly as reflow.eval.policy and reflow.eval.execute do -- this module's own spend is $0.
 - Note: Active-incident detection reruns the ADR-0003-recommended poisson_surprise detector once per corpus, over the full, unmodified event sequence, shared identically across every policy and every sensitivity level compared here.

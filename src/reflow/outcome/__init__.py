@@ -21,3 +21,11 @@ curve-fit.
 """
 
 from __future__ import annotations
+
+from reflow.outcome.oracle import RecoveryOracle, SensitivityLevel, UnmodeledRemediationClassError
+
+__all__ = [
+    "RecoveryOracle",
+    "SensitivityLevel",
+    "UnmodeledRemediationClassError",
+]

@@ -1,9 +1,9 @@
 {
   "provenance": {
-    "generated_at": "2026-09-01T02:38:18+00:00",
+    "generated_at": "2026-09-01T08:23:46+00:00",
     "seed": 20260822,
     "n_events": 50000,
-    "phase4_report_path": "L:\\projects\\buildathon\\Reflow\\docs\\reports\\phase4_diagnosis.json",
+    "phase4_report_path": "docs/reports/phase4_diagnosis.json",
     "sensitivity_levels": [
       "pessimistic",
       "central",
@@ -11,7 +11,7 @@
     ],
     "command": "uv run python -m reflow.eval.simulate",
     "library_versions": {
-      "pydantic": "2.13.4",
+      "pydantic": "2.12.5",
       "python": "3.11.15",
       "reflow": "0.1.0"
     },

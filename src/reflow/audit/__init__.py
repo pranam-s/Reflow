@@ -12,3 +12,37 @@ reconstructs and renders one payment's complete chain for ``reflow replay
 """
 
 from __future__ import annotations
+
+from reflow.audit.record import (
+    SCHEMA_VERSION,
+    AuditRecord,
+    build_audit_record,
+    compute_record_hash,
+    record_from_dict,
+    record_payload_without_hash,
+)
+from reflow.audit.record import to_dict as audit_record_to_dict
+from reflow.audit.replay import PaymentNotFoundError, find_records_for_payment, render_replay
+from reflow.audit.store import (
+    AuditTrailWriter,
+    ChainVerificationResult,
+    iter_audit_records,
+    verify_chain,
+)
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "AuditRecord",
+    "AuditTrailWriter",
+    "ChainVerificationResult",
+    "PaymentNotFoundError",
+    "audit_record_to_dict",
+    "build_audit_record",
+    "compute_record_hash",
+    "find_records_for_payment",
+    "iter_audit_records",
+    "record_from_dict",
+    "record_payload_without_hash",
+    "render_replay",
+    "verify_chain",
+]

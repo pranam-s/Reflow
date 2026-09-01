@@ -850,3 +850,57 @@ same test immediately afterward passed cleanly, with no change to the environmen
 library's own intermittent internal state bug on a rerun that already came back clean. Recorded here as
 observed-and-flaky so it is on the record rather than a surprise if it resurfaces, rather than treated as
 a code change to make.
+
+### An independent adversarial review of the whole repository was run, on purpose, the day before submission
+
+**What.** Two independent reviews of this codebase were commissioned specifically to find what a real
+external reviewer would find, rather than assume none of it exists because CI is green. Two categories of
+finding came back: things worth fixing immediately, and things worth naming honestly instead.
+
+**Evidence, fixed.** (1) Six of `src/reflow`'s package `__init__.py` files (`execute`, `audit`, `outcome`,
+`webhook`, `demo`, `report`) contained only a docstring, no re-exports, while the other nine already
+re-exported a full `__all__` surface (`reflow.policy`'s shape) -- verified concretely: `from reflow.execute
+import BoundedExecutor` and `from reflow.audit import AuditRecord` both raised `ImportError` while the
+identical pattern worked for `reflow.policy`. `execute`, `audit`, `outcome`, and `webhook` now re-export a
+full surface in the same shape; `demo` and `report` deliberately do not (both are leaf CLI entry points
+with zero existing package-level consumers -- `docs/style/README.md` now states this convention and the
+`demo`/`report` exception in full). (2) Three committed reports (`docs/reports/phase5_policy.md`,
+`phase6_execution.md`, `phase7_simulation.md`) and their `.json` siblings disclosed the author's absolute
+local Windows path (`L:\projects\buildathon\Reflow\...`) in provenance fields. Fixed at the source --
+`reflow.eval.policy`, `.execute`, and `.simulate` each gained a small `_relative_path` helper that renders
+a path relative to the repo root (POSIX-style, so it does not vary by host OS) instead of stringifying an
+absolute `Path` -- then all three artefact pairs were regenerated through their documented, $0,
+no-network, no-LLM commands (`uv run python -m reflow.eval.policy` / `.execute` / `.simulate`). Diffed the
+regenerated output against the previously-committed files field-by-field: only `generated_at`, the now-
+relative path field, and the currently-locked `pydantic` version differed; every substantive number (action
+distribution, guardrail fire counts, simulation outcomes) was byte-identical. Regenerating `.execute` also
+regenerated `docs/reports/phase6_audit_trail.jsonl` as a side effect (it is written by the same benchmark
+run); every field except `recorded_at`/`record_hash`/`prev_hash` was verified byte-identical across all 503
+records by parsing both versions and diffing every field except the hash-chain timestamps. Confirmed no
+absolute path remains anywhere under `docs/`, `README.md`, or `BUILD_LOG.md` afterward.
+
+**Evidence, named rather than fixed.** Four structural findings did not get a code change, each for a
+stated reason, not silence: `reflow.eval` growing as seven independently-duplicated report generators
+rather than a designed package (a refactor risks perturbing the byte-for-byte artefact comparison
+`tests/report/test_html.py` already caught a real cross-version bug with once, the night before
+submission, for no functional gain); three stringly-typed `dict[str, Any]` parsers for
+`docs/reports/*.json` where every other external boundary in this project uses `pydantic`; `reflow.policy`
+quietly sourcing its 15 live ambiguous-reason diagnoses from a committed evaluation artefact
+(`reflow.policy.diagnosis_source`); and an exception hierarchy that gives `execute` and `llm` a catchable
+package-level base error while every other package's typed errors extend `ValueError` directly. Recorded
+in full, with file references, in `docs/design.md`'s new "Known technical debt" section, alongside what
+the same review verified as sound: a cycle-free dependency DAG across twelve packages, every `Protocol`
+satisfied by a second independent implementation, a dataclass/pydantic boundary split with no exception,
+and `reflow.signature`/`reflow.cluster` confirmed unreachable from the production path.
+
+**Consequence.** `docs/style/README.md` now documents the `__init__.py` re-export convention explicitly
+instead of leaving it to be inferred by example; `docs/design.md` names its own technical debt with file
+references instead of a reader discovering it by tracing imports; `README.md` points at both. Full suite
+(866 tests) verified green, `ruff`/`mypy` clean, on both interpreters after every change in this entry, per
+this file's own 2026-08-23 sequential-verification finding.
+
+**Why it is worth recording.** A repository that has clearly had an adversarial pass run against it, with
+the findings named plainly rather than quietly patched over or left for someone else to trip on, reads as
+more trustworthy than one that appears merely lucky. The absolute-path leak in particular is the kind of
+finding that is invisible to every tool this project's CI runs (`ruff`, `mypy`, `pytest` all pass with it
+present) and would only ever have been caught by someone -- or something -- actually looking.
