@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>reflow -- Phase 8 full pipeline report</title>
+<style>
+  html { font-family: Georgia, "Times New Roman", serif; }
+  body {
+    background: #ffffff; color: #1a1a1a;
+    margin: 0 auto; max-width: 62rem; padding: 1.5rem;
+    line-height: 1.5; font-size: 16px;
+  }
+  h1, h2, h3 { color: #10243e; line-height: 1.3; }
+  a { color: #0b4f9e; text-decoration: underline; }
+  header, footer { border-top: 1px solid #8a8a8a; }
+  header { border-top: none; }
+  footer {
+    background: #f2f2f2; color: #3f3f3f;
+    padding: 1rem; margin-top: 2rem;
+  }
+  nav ul { padding-left: 1.2rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.75rem 0 1.5rem 0; }
+  caption {
+    caption-side: top; text-align: left; font-weight: bold;
+    color: #3f3f3f; padding-bottom: 0.4rem;
+  }
+  th, td { border: 1px solid #8a8a8a; padding: 0.35rem 0.6rem; text-align: left; }
+  thead th {
+    background: #dbe4f0; color: #0a1a2e;
+  }
+  .figcaption { color: #3f3f3f; font-style: italic; margin: 0.25rem 0 0.75rem 0; }
+  .bar-chart { margin: 0.5rem 0 0 0; }
+  .bar-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+  .bar-label { width: 14rem; flex-shrink: 0; }
+  .bar-track {
+    background: #e2e8f0; flex-grow: 1; height: 1rem;
+    border: 1px solid #8a8a8a;
+  }
+  .bar-fill { background: #0b4f9e; height: 100%; display: block; }
+  .bar-value { width: 7rem; text-align: right; flex-shrink: 0; }
+  .verdict-danger { color: #a3241c; font-weight: bold; }
+  .verdict-success { color: #146c2e; font-weight: bold; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 1rem; }
+  dt { font-weight: bold; }
+</style>
+</head>
+<body>
+<header>
+  <h1>reflow: full pipeline report</h1>
+  <p>Structured root-cause grouping, incident detection, two-tier diagnosis,
+  guardrailed bounded recovery, and a replayable audit trail, for
+  50,000 failed Razorpay payments.</p>
+</header>
+<nav aria-label="Report sections">
+  <h2>Contents</h2>
+  <ul><li><a href='#corpus'>1. The corpus</a></li><li><a href='#root-cause'>2. Root cause</a></li><li><a href='#incident-detection'>3. Incident detection</a></li><li><a href='#routing'>4. Routing split</a></li><li><a href='#guardrails'>5. The guardrail refusing to act</a></li><li><a href='#results'>6. Results vs. baselines</a></li><li><a href='#limitations'>7. Honest limitations</a></li><li><a href='#provenance'>Provenance</a></li></ul>
+</nav>
+<main>
+<section id="corpus">
+  <h2>1. The corpus</h2>
+  <p>Every event carries the same four fields Razorpay's own webhook reports: error
+  code, source, step, and reason.</p>
+  <table id='corpus-facts'><caption>Table 1. The corpus and the taxonomy it is grounded in.</caption><thead><tr><th scope='col'>Fact</th><th scope='col'>Value</th></tr></thead><tbody><tr><th scope='row'>Failed payment events</th><td>50,000</td></tr><tr><th scope='row'>Grounded in</th><td>Razorpay's own 114-row published error-reasons taxonomy</td></tr><tr><th scope='row'>Distinct reason codes observed</th><td>110</td></tr></tbody></table>
+</section>
+<section id="root-cause">
+  <h2>2. Root cause: GROUP BY, not clustering</h2>
+  <p>GROUP BY (code, source, step, reason) is the production root-cause path. On the
+  narrow stratum (102 true reasons,
+  140 groups produced), it already scores purity
+  1.000, NMI 0.983, ARI
+  0.981.</p>
+  <p>Three real clusterers were benchmarked against it on the hard part: the catch-all
+  reasons where free text is the only clue, under the realistic condition that Razorpay's
+  own documentation says it does not receive the sub-cause (ADR-0002,
+  <code>docs/design.md</code>).</p>
+  <figure class='bar-chart' aria-hidden='true' aria-label='Adjusted Rand Index on the catch-all stratum, by candidate'><div class='bar-row'><span class='bar-label'>GROUP BY (baseline)</span><span class='bar-track'><span class='bar-fill' style='width:100.00%'></span></span><span class='bar-value'>0.325</span></div><div class='bar-row'><span class='bar-label'>Drain3</span><span class='bar-track'><span class='bar-fill' style='width:95.71%'></span></span><span class='bar-value'>0.311</span></div><div class='bar-row'><span class='bar-label'>Template hashing</span><span class='bar-track'><span class='bar-fill' style='width:99.90%'></span></span><span class='bar-value'>0.325</span></div><div class='bar-row'><span class='bar-label'>TF-IDF + HDBSCAN</span><span class='bar-track'><span class='bar-fill' style='width:99.90%'></span></span><span class='bar-value'>0.325</span></div></figure><p class='figcaption'>Figure 1. Adjusted Rand Index (ARI) per candidate. Data in Table 2 below.</p><table id='catchall-bakeoff'><caption>Table 2. Catch-all-stratum clustering bake-off (opaque arm, richness 1). Higher is better; GROUP BY is the production baseline.</caption><thead><tr><th scope='col'>Candidate</th><th scope='col'>Purity</th><th scope='col'>NMI</th><th scope='col'>ARI</th><th scope='col'>Verdict vs. GROUP BY</th></tr></thead><tbody><tr><th scope='row'>GROUP BY (baseline)</th><td>0.319</td><td>0.652</td><td>0.325</td><td>--</td></tr><tr><th scope='row'>Drain3</th><td>0.296</td><td>0.613</td><td>0.311</td><td><span class='verdict-danger'>WORSE than baseline</span></td></tr><tr><th scope='row'>Template hashing</th><td>0.320</td><td>0.647</td><td>0.325</td><td><span class='verdict-success'>TIES baseline (noise, not signal)</span></td></tr><tr><th scope='row'>TF-IDF + HDBSCAN</th><td>0.320</td><td>0.647</td><td>0.325</td><td><span class='verdict-success'>TIES baseline (noise, not signal)</span></td></tr></tbody></table>
+  <p>Verdict: no clustering candidate is adopted for production catch-all root-causing.</p>
+</section>
+<section id="incident-detection">
+  <h2>3. Incident detection: Poisson surprise over (method, bank)</h2>
+  <p>A bank outage spans 3-4 reason codes at once by construction. poisson_surprise
+  correlates failure counts over (method, bank) and 15-minute buckets to find it.</p>
+  <table id='incident-detection-metrics'><caption>Table 3. poisson_surprise incident-detector benchmark.</caption><thead><tr><th scope='col'>Split</th><th scope='col'>Precision</th><th scope='col'>Recall</th><th scope='col'>F1</th></tr></thead><tbody><tr><th scope='row'>train</th><td>0.495</td><td>1.000</td><td>0.662</td></tr><tr><th scope='row'>test</th><td>0.471</td><td>1.000</td><td>0.640</td></tr></tbody></table>
+  <p>A naive GROUP BY reason view, run at the same detector's own algorithm, fragments
+  one true incident into 3.7 to
+  4.6 separate alerts on average
+  (ADR-0003).</p>
+</section>
+<section id="routing">
+  <h2>4. The routing split</h2>
+  <figure class='bar-chart' aria-hidden='true' aria-label='Events resolved by tier'><div class='bar-row'><span class='bar-label'>Tier 1: deterministic</span><span class='bar-track'><span class='bar-fill' style='width:100.00%'></span></span><span class='bar-value'>43,028</span></div><div class='bar-row'><span class='bar-label'>Tier 2: 15 escalated reasons</span><span class='bar-track'><span class='bar-fill' style='width:16.20%'></span></span><span class='bar-value'>6,972</span></div></figure><p class='figcaption'>Figure 2. Events resolved per tier. Data in Table 4 below.</p><table id='routing-split'><caption>Table 4. Deterministic-vs-LLM routing split.</caption><thead><tr><th scope='col'>Tier</th><th scope='col'>Events</th><th scope='col'>Share</th><th scope='col'>Live LLM calls</th></tr></thead><tbody><tr><th scope='row'>Tier 1: deterministic lookup</th><td>43,028</td><td>86.056%</td><td>0</td></tr><tr><th scope='row'>Tier 2: 15 escalated reason codes</th><td>6,972</td><td>13.944%</td><td>15 (cached per reason code, ever)</td></tr></tbody></table>
+  <p>86.056% of 50,000 events need
+  no model at all. Every detected incident gets one uncached call
+  (113 of them here). Total:
+  128 live LLM calls to diagnose 50,000
+  events.</p>
+</section>
+<section id="guardrails">
+  <h2>5. The guardrail refusing to act</h2>
+  <p>Payment pay_7g3rVMw8NZ8DwS: upi via ICICI Bank,
+  reason pin_not_set. Tier 1 resolves this deterministically to
+  remediation class customer_fix, base action
+  recovery_link_now. poisson_surprise had already flagged an active incident on
+  this (method, bank) pair. ActiveIncidentGuardrail intervenes: the final action is
+  wait_bank_recovery -- reflow deliberately waits for bank-side recovery rather
+  than chasing a customer whose bank is down.</p>
+  <h3>Full decision chain for this payment</h3>
+  <table id='guardrail-chain'><caption>Table 5. Full guardrail chain for payment pay_7g3rVMw8NZ8DwS.</caption><thead><tr><th scope='col'>Guardrail</th><th scope='col'>Verdict</th><th scope='col'>Action before -&gt; after</th><th scope='col'>Reason</th></tr></thead><tbody><tr><th scope='row'>terminal_reason_blocklist</th><td><span class='verdict-success'>PASSED</span></td><td>recovery_link_now -&gt; recovery_link_now</td><td>error_reason &#x27;pin_not_set&#x27; is not on the terminal/reconcile blocklist.</td></tr><tr><th scope='row'>active_incident_suppression</th><td><span class='verdict-danger'>BLOCKED</span></td><td>recovery_link_now -&gt; wait_bank_recovery</td><td>poisson_surprise (docs/design.md ADR-0003) detected an active incident on this (method, bank) at this event&#x27;s time; chasing the customer while the bank or rail itself is down is wrong -- deliberately waiting for bank-side recovery instead.</td></tr><tr><th scope='row'>amount_floor</th><td><span class='verdict-success'>PASSED</span></td><td>wait_bank_recovery -&gt; wait_bank_recovery</td><td>candidate action wait_bank_recovery does not represent further spend, so the amount floor does not apply.</td></tr><tr><th scope='row'>attempt_cap</th><td><span class='verdict-success'>PASSED</span></td><td>wait_bank_recovery -&gt; wait_bank_recovery</td><td>candidate action wait_bank_recovery is not a further attempt, so the attempt cap does not apply.</td></tr><tr><th scope='row'>per_customer_contact_cap</th><td><span class='verdict-success'>PASSED</span></td><td>wait_bank_recovery -&gt; wait_bank_recovery</td><td>candidate action wait_bank_recovery does not contact the customer, so the contact cap does not apply.</td></tr><tr><th scope='row'>contact_cooldown</th><td><span class='verdict-success'>PASSED</span></td><td>wait_bank_recovery -&gt; wait_bank_recovery</td><td>candidate action wait_bank_recovery does not contact the customer, so the cooldown does not apply.</td></tr><tr><th scope='row'>quiet_hours</th><td><span class='verdict-success'>PASSED</span></td><td>wait_bank_recovery -&gt; wait_bank_recovery</td><td>candidate action wait_bank_recovery is not an immediate send, so quiet hours do not apply.</td></tr></tbody></table>
+  <h3>Guardrail fire counts across the full corpus</h3>
+  <figure class='bar-chart' aria-hidden='true' aria-label='Guardrail fire counts across the full corpus'><div class='bar-row'><span class='bar-label'>terminal_reason_blocklist</span><span class='bar-track'><span class='bar-fill' style='width:4.13%'></span></span><span class='bar-value'>647</span></div><div class='bar-row'><span class='bar-label'>active_incident_suppression</span><span class='bar-track'><span class='bar-fill' style='width:47.11%'></span></span><span class='bar-value'>7,372</span></div><div class='bar-row'><span class='bar-label'>amount_floor</span><span class='bar-track'><span class='bar-fill' style='width:12.72%'></span></span><span class='bar-value'>1,991</span></div><div class='bar-row'><span class='bar-label'>attempt_cap</span><span class='bar-track'><span class='bar-fill' style='width:0.03%'></span></span><span class='bar-value'>4</span></div><div class='bar-row'><span class='bar-label'>per_customer_contact_cap</span><span class='bar-track'><span class='bar-fill' style='width:0.00%'></span></span><span class='bar-value'>0</span></div><div class='bar-row'><span class='bar-label'>contact_cooldown</span><span class='bar-track'><span class='bar-fill' style='width:2.74%'></span></span><span class='bar-value'>428</span></div><div class='bar-row'><span class='bar-label'>quiet_hours</span><span class='bar-track'><span class='bar-fill' style='width:100.00%'></span></span><span class='bar-value'>15,648</span></div></figure><p class='figcaption'>Figure 3. Guardrail fire counts. Data in Table 6 below.</p><table id='guardrail-fires'><caption>Table 6. Per-guardrail fire/pass counts across all 50,000 events.</caption><thead><tr><th scope='col'>Guardrail</th><th scope='col'>Fired</th><th scope='col'>Passed</th></tr></thead><tbody><tr><th scope='row'>terminal_reason_blocklist</th><td>647</td><td>49,353</td></tr><tr><th scope='row'>active_incident_suppression</th><td>7,372</td><td>42,628</td></tr><tr><th scope='row'>amount_floor</th><td>1,991</td><td>48,009</td></tr><tr><th scope='row'>attempt_cap</th><td>4</td><td>49,996</td></tr><tr><th scope='row'>per_customer_contact_cap</th><td>0</td><td>50,000</td></tr><tr><th scope='row'>contact_cooldown</th><td>428</td><td>49,572</td></tr><tr><th scope='row'>quiet_hours</th><td>15,648</td><td>34,352</td></tr></tbody></table>
+  <h3>Action distribution</h3>
+  <table id='action-distribution'><caption>Table 7. Action distribution before (candidate) and after (final) the guardrail chain.</caption><thead><tr><th scope='col'>Action</th><th scope='col'>Candidate count</th><th scope='col'>Final count</th></tr></thead><tbody><tr><th scope='row'>escalate_human</th><td>5,172</td><td>4,310</td></tr><tr><th scope='row'>no_action</th><td>0</td><td>2,423</td></tr><tr><th scope='row'>reconcile</th><td>0</td><td>647</td></tr><tr><th scope='row'>recovery_link_backoff</th><td>4,508</td><td>19,137</td></tr><tr><th scope='row'>recovery_link_now</th><td>32,254</td><td>13,391</td></tr><tr><th scope='row'>switch_method</th><td>8,066</td><td>2,720</td></tr><tr><th scope='row'>wait_bank_recovery</th><td>0</td><td>7,372</td></tr></tbody></table>
+  <p>The full guardrail chain sent 9,580 fewer contacts
+  (21.37%) than the escalation ladder's own
+  candidate action would have, with zero guardrails applied.</p>
+</section>
+<section id="results">
+  <h2>6. Results: reflow vs. three baselines</h2>
+  <figure class='bar-chart' aria-hidden='true' aria-label='Money recovered by policy, central sensitivity estimate'><div class='bar-row'><span class='bar-label'>do_nothing</span><span class='bar-track'><span class='bar-fill' style='width:29.84%'></span></span><span class='bar-value'>22,584,778</span></div><div class='bar-row'><span class='bar-label'>notify_all</span><span class='bar-track'><span class='bar-fill' style='width:100.00%'></span></span><span class='bar-value'>75,677,051</span></div><div class='bar-row'><span class='bar-label'>notify_all_once</span><span class='bar-track'><span class='bar-fill' style='width:96.10%'></span></span><span class='bar-value'>72,722,654</span></div><div class='bar-row'><span class='bar-label'>reflow</span><span class='bar-track'><span class='bar-fill' style='width:94.97%'></span></span><span class='bar-value'>71,874,179</span></div></figure><p class='figcaption'>Figure 4. Money recovered by policy (central estimate). Data in Table 8.</p><table id='central-results'><caption>Table 8. Money recovered and contacts sent by policy (central estimate).</caption><thead><tr><th scope='col'>Policy</th><th scope='col'>Money recovered (INR)</th><th scope='col'>Contacts sent</th></tr></thead><tbody><tr><th scope='row'>do_nothing</th><td>22,584,778</td><td>0</td></tr><tr><th scope='row'>notify_all</th><td>75,677,051</td><td>47,192</td></tr><tr><th scope='row'>notify_all_once</th><td>72,722,654</td><td>44,674</td></tr><tr><th scope='row'>reflow</th><td>71,874,179</td><td>33,691</td></tr></tbody></table>
+  <p>Said plainly: reflow recovers <strong>less</strong> absolute money than blanket
+  spam (notify_all). It recovers 95% of notify_all's money at
+  71% of notify_all's contact volume, and beats do_nothing by
+  roughly 3.2x. This is reported as the finding, not reframed
+  (ADR-0007).</p>
+  <table id='full-band-results'><caption>Table 9. Full three-point sensitivity band (pessimistic/central/optimistic).</caption><thead><tr><th scope='col'>Policy</th><th scope='col'>Sensitivity level</th><th scope='col'>Money recovered (INR)</th><th scope='col'>Contacts sent</th></tr></thead><tbody><tr><th scope='row'>do_nothing</th><td>pessimistic</td><td>18,259,548</td><td>0</td></tr><tr><th scope='row'>notify_all</th><td>pessimistic</td><td>50,662,109</td><td>48,087</td></tr><tr><th scope='row'>notify_all_once</th><td>pessimistic</td><td>48,242,292</td><td>44,674</td></tr><tr><th scope='row'>reflow</th><td>pessimistic</td><td>48,701,612</td><td>34,195</td></tr><tr><th scope='row'>do_nothing</th><td>central</td><td>22,584,778</td><td>0</td></tr><tr><th scope='row'>notify_all</th><td>central</td><td>75,677,051</td><td>47,192</td></tr><tr><th scope='row'>notify_all_once</th><td>central</td><td>72,722,654</td><td>44,674</td></tr><tr><th scope='row'>reflow</th><td>central</td><td>71,874,179</td><td>33,691</td></tr><tr><th scope='row'>do_nothing</th><td>optimistic</td><td>27,327,498</td><td>0</td></tr><tr><th scope='row'>notify_all</th><td>optimistic</td><td>98,088,700</td><td>46,353</td></tr><tr><th scope='row'>notify_all_once</th><td>optimistic</td><td>95,306,938</td><td>44,674</td></tr><tr><th scope='row'>reflow</th><td>optimistic</td><td>95,225,149</td><td>33,189</td></tr></tbody></table>
+</section>
+<section id="limitations">
+  <h2>7. Honest limitations</h2>
+  <ul>
+    <li>Every recovery outcome in this report is simulated by a seeded oracle, never
+    observed from a real customer or a live Razorpay payment. Razorpay's test mode
+    exposes only a binary pass/fail toggle, never a probability.</li>
+    <li>The guardrails' caution has a real, measured cost, not a hidden one -- see
+    Table 10.</li>
+    <li>Webhook delivery deduplication has a tested primitive
+    (<code>reflow.webhook.dedup</code>) but no live HTTP endpoint anywhere in this
+    project: a production-readiness gap, stated as one, not a live bug.</li>
+    <li>This report's own accessibility validator
+    (<code>reflow.report.validate</code>) performs structural and colour-contrast
+    checks; it is not a full axe-core/browser-based WCAG audit. See that module's
+    docstring for exactly what it does and does not check.</li>
+  </ul>
+  <table id='guardrail-opportunity-cost'><caption>Table 10. Guardrail opportunity cost (central sensitivity estimate).</caption><thead><tr><th scope='col'>Quantity</th><th scope='col'>Value</th></tr></thead><tbody><tr><th scope='row'>Guardrail-blocked events</th><td>9,992</td></tr><tr><th scope='row'>Of those, would have recovered per the oracle</th><td>1,552</td></tr><tr><th scope='row'>Orders never recovered by any other path</th><td>1,487</td></tr></tbody></table>
+</section>
+<section id="provenance">
+  <h2>Provenance</h2>
+  <dl>
+    <dt>Regenerate with</dt><dd><code>uv run python -m reflow.report</code></dd>
+    <dt>Corpus seed</dt><dd>20260822</dd>
+    <dt>Generated on</dt><dd>2026-09-01</dd>
+    <dt>reflow version</dt><dd>0.1.0</dd>
+    <dt>Requires Python</dt><dd>&gt;=3.11</dd>
+    <dt>pydantic version</dt><dd>2.12.5</dd>
+    <dt>rich version</dt><dd>15.0.0</dd>
+  </dl>
+  <p>Every number below is read from committed Phase 2, 3, 4, 5, 6, and 7 report
+  artefacts in <code>docs/reports/</code>. No network call, credential, or LLM call was
+  made to produce this report.</p>
+</section>
+</main>
+<footer>
+  <p>Generated on 2026-09-01 by <code>uv run python -m reflow.report</code>,
+  corpus seed 20260822. See <code>docs/design.md</code> for the full
+  architecture decision records this report summarises.</p>
+</footer>
+</body>
+</html>

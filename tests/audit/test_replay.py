@@ -194,6 +194,62 @@ def test_render_replay_shows_a_fully_populated_executed_outcome() -> None:
     assert "a free-text note" in text
 
 
+def test_render_replay_defaults_to_plain_numbering_one_through_six() -> None:
+    event = make_event()
+    decision = make_decision(event=event)
+    record = build_audit_record(
+        decision=decision,
+        event=event,
+        diagnosis=_diagnosis(),
+        execution=None,
+        sequence=0,
+        prev_hash=None,
+        recorded_at="2026-01-01T00:00:00+00:00",
+    )
+    text = _render_to_text([record])
+    assert "1. Payment" in text
+    assert "6. Execution outcome" in text
+
+
+def test_render_replay_accepts_sublettered_section_numbers() -> None:
+    event = make_event()
+    decision = make_decision(event=event)
+    record = build_audit_record(
+        decision=decision,
+        event=event,
+        diagnosis=_diagnosis(),
+        execution=None,
+        sequence=0,
+        prev_hash=None,
+        recorded_at="2026-01-01T00:00:00+00:00",
+    )
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120)
+    render_replay(console, [record], section_numbers=("5a", "5b", "5c", "5d", "5e", "5f"))
+    text = buffer.getvalue()
+    assert "5a. Payment" in text
+    assert "5f. Execution outcome" in text
+    assert "1. Payment" not in text
+
+
+def test_render_replay_rejects_wrong_length_section_numbers() -> None:
+    event = make_event()
+    decision = make_decision(event=event)
+    record = build_audit_record(
+        decision=decision,
+        event=event,
+        diagnosis=_diagnosis(),
+        execution=None,
+        sequence=0,
+        prev_hash=None,
+        recorded_at="2026-01-01T00:00:00+00:00",
+    )
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120)
+    with pytest.raises(ValueError, match="exactly 6"):
+        render_replay(console, [record], section_numbers=("1", "2"))
+
+
 def test_render_replay_shows_a_failed_outcome_error_message() -> None:
     event = make_event()
     decision = make_decision(event=event, final_action=Action.RECOVERY_LINK_NOW)

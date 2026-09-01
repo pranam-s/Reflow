@@ -24,6 +24,7 @@ on a colour terminal.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from rich import box
@@ -48,6 +49,23 @@ console, not a pipe or redirect), while plain ASCII renders identically
 and correctly everywhere -- a real terminal, a piped/redirected file, or
 a screen reader -- which matters more here than the cosmetic upgrade a
 Unicode box would give a real terminal."""
+
+
+_SECTION_TITLES: tuple[str, ...] = (
+    "Payment",
+    "Root cause -- (code, source, step, reason)",
+    "Diagnosis",
+    "Guardrail chain (every guardrail evaluated, blocked or passed)",
+    "Decision",
+    "Execution outcome",
+)
+"""The six section names every replay renders, in order, independent of
+how each section is numbered (see :func:`render_replay`'s
+``section_numbers`` argument)."""
+
+_DEFAULT_SECTION_NUMBERS: tuple[str, ...] = ("1", "2", "3", "4", "5", "6")
+"""``reflow replay``'s own standalone numbering: plain ``1`` through
+``6``, unchanged from every prior phase."""
 
 
 class PaymentNotFoundError(ValueError):
@@ -252,7 +270,12 @@ def _execution_table(record: AuditRecord) -> Table:
     return table
 
 
-def render_replay(console: Console, records: list[AuditRecord]) -> None:
+def render_replay(
+    console: Console,
+    records: list[AuditRecord],
+    *,
+    section_numbers: Sequence[str] = _DEFAULT_SECTION_NUMBERS,
+) -> None:
     """Print one payment's complete decision chain to ``console``.
 
     Args:
@@ -261,45 +284,45 @@ def render_replay(console: Console, records: list[AuditRecord]) -> None:
             constructed (see :func:`reflow.cli.replay_command`).
         records: The payment's audit records, in trail order (from
             :func:`find_records_for_payment`).
+        section_numbers: The six panel-title prefixes to use, one per
+            entry of :data:`_SECTION_TITLES`, in order. Defaults to plain
+            ``"1"``-``"6"``, which is what standalone ``reflow replay``
+            always uses. :mod:`reflow.demo.runner` passes sub-lettered
+            values (``"5a"``-``"5f"``) instead, so this same rendering,
+            embedded inside the demo's own numbered beat 5, cannot be
+            mistaken for a second, independently-numbered "1" through "6"
+            sequence on screen.
+
+    Raises:
+        ValueError: If ``section_numbers`` does not have exactly six
+            entries, one per :data:`_SECTION_TITLES`.
     """
+    if len(section_numbers) != len(_SECTION_TITLES):
+        raise ValueError(
+            f"section_numbers must have exactly {len(_SECTION_TITLES)} entries, "
+            f"got {len(section_numbers)}."
+        )
+    titles = [
+        f"{number}. {title}" for number, title in zip(section_numbers, _SECTION_TITLES, strict=True)
+    ]
     for index, record in enumerate(records):
         if len(records) > 1:
             console.print(f"[bold]-- record {index + 1} of {len(records)} --[/bold]")
         console.print(
-            Panel(_header_table(record), title="1. Payment", border_style="cyan", box=_BOX_STYLE)
+            Panel(_header_table(record), title=titles[0], border_style="cyan", box=_BOX_STYLE)
         )
         console.print(
-            Panel(
-                _error_group_table(record),
-                title="2. Root cause -- (code, source, step, reason)",
-                border_style="cyan",
-                box=_BOX_STYLE,
-            )
+            Panel(_error_group_table(record), title=titles[1], border_style="cyan", box=_BOX_STYLE)
         )
         console.print(
-            Panel(
-                _diagnosis_table(record),
-                title="3. Diagnosis",
-                border_style="cyan",
-                box=_BOX_STYLE,
-            )
+            Panel(_diagnosis_table(record), title=titles[2], border_style="cyan", box=_BOX_STYLE)
         )
         console.print(
-            Panel(
-                _guardrail_table(record),
-                title="4. Guardrail chain (every guardrail evaluated, blocked or passed)",
-                border_style="cyan",
-                box=_BOX_STYLE,
-            )
+            Panel(_guardrail_table(record), title=titles[3], border_style="cyan", box=_BOX_STYLE)
         )
         console.print(
-            Panel(_decision_table(record), title="5. Decision", border_style="cyan", box=_BOX_STYLE)
+            Panel(_decision_table(record), title=titles[4], border_style="cyan", box=_BOX_STYLE)
         )
         console.print(
-            Panel(
-                _execution_table(record),
-                title="6. Execution outcome",
-                border_style="cyan",
-                box=_BOX_STYLE,
-            )
+            Panel(_execution_table(record), title=titles[5], border_style="cyan", box=_BOX_STYLE)
         )
