@@ -1,0 +1,14 @@
+flowchart TD
+    TAX["Vendored Razorpay taxonomy<br/>data/razorpay_error_reasons.xlsx"] --> CORPUS["Synthetic corpus<br/>50,000 seeded failed-payment events"]
+    CORPUS --> ROOTCAUSE["Root cause: GROUP BY (code, source, step, reason)<br/>beats clustering on the catch-all reasons -- ADR-0002"]
+    CORPUS --> INCIDENT["Incident detection: Poisson-surprise burst detector<br/>over (method, bank), 15-minute buckets -- ADR-0003"]
+    ROOTCAUSE --> TIER1["Tier 1: deterministic lookup<br/>95 of 110 reason codes, 86.056% of events, $0, 0 LLM calls"]
+    ROOTCAUSE --> TIER2A["Tier 2a: ambiguous-reason LLM<br/>15 reason codes, cached, 15 live calls ever"]
+    INCIDENT --> TIER2B["Tier 2b: incident LLM diagnosis<br/>1 uncached call per detected incident"]
+    TIER1 --> POLICY["Policy engine: remediation class to<br/>base action, pure function -- ADR-0005"]
+    TIER2A --> POLICY
+    TIER2B --> POLICY
+    POLICY --> GUARDRAILS["Guardrail chain: 7 guardrails,<br/>fixed order, every verdict recorded -- ADR-0005"]
+    GUARDRAILS --> EXECUTE["Bounded execution: closed 7-action set<br/>against Razorpay test-mode Payment Links API -- ADR-0006"]
+    EXECUTE --> AUDIT["Append-only, hash-chained audit trail<br/>reflow replay &lt;payment_id&gt; -- ADR-0006"]
+    AUDIT --> EVAL["Evaluation: seeded outcome oracle vs<br/>do_nothing / notify_all / notify_all_once -- ADR-0007"]
