@@ -706,3 +706,147 @@ answer on all 6 sampled deterministic reason codes, every time.
 **Consequence.** Independent corroboration, not assumed, that ADR-0002/ADR-0004's 95-of-110
 deterministically-resolved reason codes really are unambiguous in a way an independent model also sees,
 not merely unambiguous to this project's own rule-based parser reading the same vendored text.
+
+### The report's own accessibility validator caught a duplicate `id` the generator itself introduced
+
+**What.** Phase 8's `reflow.report.validate` includes a check that every `id` attribute in the generated
+HTML report is unique -- added because a document with two elements sharing an `id` is invalid HTML and
+breaks in-page anchor navigation. Running it against the first draft of `reflow.report.html` failed
+immediately.
+
+**Evidence.** The incident-detection section's `<section id="incident-detection">` and its data table
+(`_table(table_id="incident-detection", ...)`) had been given the identical id by accident -- a
+copy-paste of the section's own anchor name into the table's id, never noticed by eye while writing the
+generator, since a browser renders a duplicate-id document without complaint. The validator's
+`unique_ids` check found it on the very first run.
+
+**Consequence.** Renamed the table's id to `incident-detection-metrics`. Kept as a permanent regression
+test (`tests/report/test_html.py::test_build_report_html_against_real_committed_data_passes_every_validator_check`)
+rather than a one-off manual fix -- exactly the kind of defect a "real structural validator," run every
+time, is supposed to catch before it reaches a committed artefact, and exactly why Deliverable 2's brief
+asked for programmatic validation rather than a one-time visual check.
+
+### Node 24 and npm registry access were verified present, and axe-core was still not adopted
+
+**What.** Deliverable 2's brief named `axe-core` as the expected CI validation tool, with an explicit
+escape hatch to a structural validator if a full axe run proved impractical. Rather than assume
+impracticality, both preconditions were checked directly: `node --version` (`v24.20.0`), `npm --version`
+(`11.10.1`), and a live `GET https://registry.npmjs.org/axe-core` (`200`) all succeeded in this
+environment.
+
+**Evidence.** Axe-core's own documentation states its `color-contrast` rule requires a real browser
+rendering engine to compute accurately, and explicitly does not support it under a bare `jsdom` run --
+the only way to run axe-core accurately is via a real browser (Puppeteer or Playwright plus a bundled
+Chromium download), which this Python-only, single-`uv.lock` repository has no existing infrastructure
+for.
+
+**Consequence.** Recorded as a considered-and-rejected alternative in `docs/design.md` ADR-0008, not as
+"the tool wasn't available." A real, honestly-scoped structural/contrast validator
+(`reflow.report.validate`) was built instead, runs inside the existing `uv run pytest` CI job with zero
+new CI configuration, and states in its own docstring exactly what it does and does not check --
+including, plainly, that it is not axe-core and makes no claim to a full WCAG audit.
+
+### The paced demo's wall-clock time was measured directly, not estimated from its pause constants
+
+**What.** `reflow demo`'s default (non-`--fast`) pacing sums nine pause constants to a computed total of
+172 seconds. The phase brief's target is "roughly 2.5-3 minutes," and a computed sum of sleep arguments
+is not proof the process actually takes that long once real content-printing and process-startup
+overhead are included.
+
+**Evidence.** Ran the full paced command for real (`uv run reflow demo`, no `--fast`, credentials unset)
+and timed it end to end: **2 minutes 54.3 seconds** wall clock, squarely inside the target band.
+
+**Consequence.** No pacing constants were adjusted after this measurement -- the default pace already
+lands where the brief asks, confirmed rather than assumed. `reflow demo --fast` (used by every automated
+test and CI check) is unaffected, since `--fast` sets every pause to zero and changes no printed content.
+
+### `uv add`'s automatic lower bound silently downgraded `openrouter` by a whole major version
+
+**What.** `pyproject.toml` declared `pydantic>=2.13.4` -- not a deliberate ceiling, just the loose floor
+`uv add pydantic` wrote automatically the day it was added. `openrouter` 1.x declares
+`pydantic<2.13,>=2.11.2`. Those two floors are individually reasonable and jointly unsatisfiable above
+`openrouter==0.10.x`, so `uv lock` resolved `openrouter` down to the newest version that still fits --
+**0.10.8** -- with no warning, no error, and no line in `uv.lock` calling out that a newer major version
+existed. The project shipped nearly its entire build on an SDK release almost a year and a full major
+version behind current (`1.1.108`) purely because two unrelated `uv add` floors happened to overlap
+exactly wrong, and nothing in the normal `uv lock` / `uv sync --locked` workflow ever surfaces that.
+
+**Evidence.** `uv lock --upgrade-package openrouter --upgrade-package pydantic` after relaxing
+`pyproject.toml`'s floor to `pydantic>=2.11.2` (matching `openrouter` 1.x's own floor, not a number picked
+by us) resolved cleanly to `openrouter==1.1.108`, `pydantic==2.12.5`, first try -- confirming the only
+thing holding `openrouter` back was our own unrelated dependency's auto-written floor, not anything
+`openrouter` itself required or any real incompatibility. Read the newly-installed 1.x source under
+`.venv` directly (both releases are Speakeasy-generated from the same OpenAPI spec) and confirmed the
+entire surface `reflow.llm.client` calls -- `OpenRouter(api_key=..., timeout_ms=...)`, `chat.send`/
+`send_async`, `ChatResult`, `errors.OpenRouterError`, the `reasoning_effort` shorthand, the `json_schema`
+response-format shape -- is unchanged between 0.10.8 and 1.1.108. Zero lines of `reflow/llm/client.py`
+needed to change; the full suite and every committed VCR cassette (recorded against 0.10.8) replayed
+correctly against 1.1.108 with no re-recording required.
+
+**Consequence.** Floor relaxed to `pydantic>=2.11.2`, `openrouter` now resolves to `1.1.108`. More
+generally: a silently-resolved-down transitive dependency is invisible in every routine command this
+project runs (`uv sync --locked` succeeds, `uv lock` succeeds, CI is green) precisely because nothing
+about it is an error -- it is a correct resolution, just not the one anyone would have chosen on purpose.
+The only way this was found was an unrelated audit reading `pyproject.toml`'s own floors against what the
+dependency itself declares, not any tool flagging it. Worth periodically doing that comparison by hand
+(or with `uv tree` / `pip index versions`) for any dependency whose latest release matters, rather than
+trusting a green lockfile to mean "on the newest compatible version."
+
+**Why it is worth recording.** This is the second time this project has hit "the tool succeeded silently
+and that was the problem" (see 2026-08-23's mypy-`python_version`-pin entry). A version floor that `uv
+add` writes for you is a correct-at-the-time snapshot, not a statement that it should never move --
+leaving every floor at whatever `uv add` first wrote, forever, is itself a choice with a real cost, even
+though `uv`'s own reproducibility guarantee (a committed, currently-satisfiable `uv.lock`) never breaks.
+
+### A committed generated artefact embedded the running interpreter, and the matrix caught it before CI ever ran
+
+**What.** `docs/reports/phase8_report.html`'s provenance block stamped `sys.version_info` -- the
+interpreter that happened to render it -- and `tests/report/test_html.py::
+test_committed_report_matches_the_generator_output` asserts the committed file is byte-identical to a
+fresh regeneration. The file was committed after generating on 3.11 (`3.11.15`); regenerating the exact
+same inputs under 3.13 produces `3.13.15` in that one field and nothing else, so the byte-equality
+assertion fails on 3.13 only. This test is new in Phase 8 and had never been run on the 3.11/3.13 CI
+matrix before this was caught.
+
+**Evidence.** Checked every other field in the provenance block for the same class of problem before
+picking a fix, per the two live options on the table (exclude environment-dependent fields from the
+comparison, or stop stamping an environment-dependent value at all): `generated_on` and
+`regenerate_command` are fixed string constants, not `datetime.now()`; `reflow_version` is this
+project's own pinned `0.1.0`; `pydantic` (`2.12.5`) and `rich` (`15.0.0`) both resolve to one exact
+version in `uv.lock` with no `python_full_version` marker splitting them across the matrix (unlike
+`numpy`/`scipy`, which do split and already caused the 2026-08-23 mypy-stub incident -- but numpy/scipy
+versions are never surfaced in this report). Python's own interpreter version was the only
+environment-dependent field.
+
+**Consequence.** Chose to stop stamping the running interpreter rather than add an exclusion list to the
+test, per the finding above: there was nothing else to exclude, so an exclusion-based test would have
+had exactly one entry and no auditing value over just fixing the source. `reflow.report.data._python_requires`
+now reads the installed `reflow` package's own `Requires-Python` metadata (mirrors `pyproject.toml`'s
+`requires-python = ">=3.11"`, read via `importlib.metadata.metadata("reflow")["Requires-Python"]` rather
+than hard-coded, so it cannot drift from `pyproject.toml`) -- stable across the whole matrix, and a more
+useful provenance fact for a reader besides: which Python versions this project supports, not which one
+rendered the file. The strict byte-equality test is unchanged and unweakened. While fixing this,
+`PackageMetadata.get()` turned out to be typeshed-gated to Python 3.12+ (`importlib/metadata/_meta.pyi`);
+`mypy` (unpinned to one `python_version` since the 2026-08-23 numpy-stub incident, so it type-checks
+under whichever interpreter is actually running) correctly rejected it under the 3.11 job. Used
+`__getitem__` instead, which typeshed declares unconditionally. Regenerated the report via
+`uv run python -m reflow.report`; the validator still passes all ten checks. Full suite (866 tests)
+verified green on both 3.11 and 3.13, run strictly sequentially per this file's own 2026-08-23
+`.venv`-corruption entry.
+
+**Why it is worth recording.** A single-interpreter CI would never have caught this -- the file would
+have looked permanently correct to whoever generated and committed it, and every future 3.11-only run
+would keep validating it. This is the version matrix earning its keep for the second time on this
+project (the first being the 2026-08-23 numpy/mypy-stub incident), on a test that had not even reached
+CI yet.
+
+### `vcrpy`'s connection-pool bookkeeping raised a `KeyError` once, intermittently, and did not reproduce
+
+**What.** During this task's verification, one test run hit a `KeyError` inside `vcrpy`'s own internal
+connection-pool bookkeeping (`vcr/patch.py:384`), not in any of this project's code. Rerunning the exact
+same test immediately afterward passed cleanly, with no change to the environment or the test.
+
+**Consequence.** Not chased, per this project's policy of not spending effort reproducing a third-party
+library's own intermittent internal state bug on a rerun that already came back clean. Recorded here as
+observed-and-flaky so it is on the record rather than a surprise if it resurfaces, rather than treated as
+a code change to make.

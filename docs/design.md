@@ -1170,3 +1170,158 @@ as designed and measured above. reflow's headline claim is comparable recovery (
   contact-cost data (compliance fines, unsubscribe/complaint rates, measured contact fatigue)
   becomes available to replace the qualitative case made here for why reflow's lower contact
   volume is worth its absolute-money cost with a quantitative one.
+
+### ADR-0008: accessibility by structural construction, not a browser-based audit
+
+**Status:** Accepted (Phase 8)
+
+**Context**
+
+Deliverable 2 is a self-contained HTML report of the full pipeline's results, and it has
+to be genuinely accessible rather than decoratively styled, because neither of this
+project's two reviewers can eyeball a rendered page: the submitter is a screen-reader
+user, and his reviewing agent has no browser at all. The brief also requires the report
+be validated programmatically in CI, naming `axe-core` (Node 24 is available in this
+environment) as the expected tool, with an explicit escape hatch: "if a full axe run in
+CI proves impractical, implement a real structural validator and say plainly what it
+does and does not check."
+
+Two design questions had to be answered in writing before any HTML was generated, per
+this project's second governing principle: what makes a static, chart-bearing report
+actually accessible by construction rather than merely styled to look accessible; and
+whether axe-core is the right tool for *this* report, in *this* repository, given what
+axe-core itself documents about its own limits.
+
+**Why axe-core in CI was evaluated and rejected**
+
+Node 24 and network access to the npm registry were both verified present in this
+environment before deciding anything (`node --version`, `npm --version`, and a live
+`GET https://registry.npmjs.org/axe-core` all succeeded). The decision not to wire
+axe-core into CI is therefore not "it wasn't available" -- it was evaluated on its
+merits and rejected for three concrete reasons:
+
+1. **Axe-core's own documentation states its `color-contrast` rule requires a real
+   browser rendering engine** to compute accurately; a `jsdom`-only run (no browser)
+   explicitly does not support it. Since colour contrast is one of this deliverable's
+   named hard requirements ("WCAG AA contrast; never colour as the sole signal"),
+   running axe-core without a real browser would silently skip the one check most
+   directly named in the brief -- a worse outcome than not running axe-core at all,
+   because a green CI badge would misrepresent what was actually checked.
+2. **A real browser means Puppeteer or Playwright plus a bundled Chromium download**
+   (on the order of hundreds of megabytes), a new toolchain and a new network
+   dependency in CI for a project whose reproducibility guarantee is presently a single
+   `uv.lock` and a Python-only dependency tree. This project's own culture already
+   rejected a comparably-justified heavier tool once before on cost/benefit grounds
+   (ADR-0002, TF-IDF+HDBSCAN's runtime cost) -- the same discipline applies here: reach
+   for the heavier tool only when the cheaper one is measurably insufficient, not by
+   default because the heavier tool is the industry-recognised one.
+3. **The artefact being validated is one static file, generated once and committed**,
+   not a UI that changes shape on every commit the way a live application's pages do.
+   The recurring, per-commit value a browser-based accessibility regression suite
+   provides in a UI codebase is largely absent here: the generator
+   (`reflow.report.html`) is deterministic, and its own output is diffed against the
+   committed file in `tests/report/test_html.py::test_committed_report_matches_the_generator_output`,
+   so structural drift is already caught without a browser.
+
+Per this project's first governing principle, this is reported as a considered,
+written-down engineering trade-off, not as "axe-core was infeasible to set up."
+
+**Decision: accessibility is structural by construction, checked by a real, scoped
+validator**
+
+`reflow.report.html` builds every accessibility property directly into the generator,
+never as a post-hoc fix:
+
+- Semantic HTML5 landmarks (`<header>`, `<nav>`, `<main>`, `<section>`, `<footer>`), a
+  single `<h1>`, and `<h2>`/`<h3>` section headings that never skip a level.
+- Every `<table>` has a `<caption>`; every `<th>` carries an explicit
+  `scope="col"`/`scope="row"`.
+- **Every chart is a purely decorative `<figure aria-hidden="true">` built from CSS bars
+  (no `<img>`, no `<canvas>`, no JavaScript), immediately followed by a real, captioned
+  `<table>` carrying the identical numbers.** Marking the figure `aria-hidden` means a
+  screen reader skips it entirely and reads only the table -- the "every chart paired
+  with its data table, not an image alone" requirement is satisfied by construction,
+  not merely by convention, because no information exists anywhere in the document
+  *only* inside the hidden figure.
+- No colour is ever the sole carrier of meaning: every verdict a colour decorates
+  ("WORSE than baseline", "BLOCKED") is spelled out in plain text in the same cell,
+  the same pattern `reflow.audit.replay` already established in Phase 6.
+- A fixed, small colour palette (`reflow.report.colors`) declares every foreground
+  /background pairing the report uses for text once, alongside the WCAG 2.1
+  relative-luminance contrast formula implemented from the specification's own maths
+  (`relative_luminance`, `contrast_ratio`) -- not a third-party contrast-checking
+  library, since the formula is short, exact, and independently verifiable by reading
+  it. Every declared pair is 6.49:1 or higher (the specification's AA minimum for
+  normal text is 4.5:1), a deliberate margin rather than a bare pass.
+- Self-contained: one file, inline `<style>`, no external stylesheet, font, script, or
+  CDN reference of any kind.
+
+`reflow.report.validate.validate_report_html` is the "real structural validator" the
+brief's escape hatch calls for, run as an ordinary part of `uv run pytest` in CI (no new
+CI job, no new toolchain). It checks, mechanically, against the actual generated HTML
+text: `<html lang>` and `<title>` presence; heading count and order; every table's
+caption; every `<th>`'s scope; every `<img>`'s `alt` (none exist in this report, but the
+check is generic); every chart figure's `aria-hidden` attribute and its pairing with a
+following table before the next heading or chart; zero `<script>`/`<link>` tags and zero
+external `href`/`src` references; uniqueness of every `id` attribute; and, for the
+contrast requirement axe-core itself cannot honestly check without a browser, an exact
+WCAG 2.1 contrast-ratio computation against the precise hex values `reflow.report.colors`
+declares and `reflow.report.html` ships, cross-checked that each declared colour
+literally appears in the shipped stylesheet.
+
+**What this validator does not check, stated with the same plainness as what it does**
+(also recorded in the module's own docstring, so a reader does not need this ADR to
+know it): it does not render the page in a browser or any layout engine, so no computed
+style, cascade resolution, or actual on-screen colour is ever inspected; it does not
+check keyboard focus order, tab-index behaviour, ARIA semantics beyond the two specific
+attributes named above, or real assistive-technology announcement behaviour; and it is
+not axe-core and makes no claim to run axe-core's rule set. It is a real, mechanical
+check of this project's own generated markup and declared colours -- not a substitute
+for a full WCAG audit conducted with assistive technology, which this project does not
+claim to have performed.
+
+**Decision**
+
+Accessibility is built into `reflow.report.html`'s generation logic directly, verified
+by a real, honestly-scoped structural/contrast validator
+(`reflow.report.validate`) that runs inside the existing `pytest` CI job, rather than by
+adding a browser-based axe-core toolchain to validate one static, already-committed
+file. `docs/reports/phase8_report.html` passes every check this validator runs.
+
+**Alternatives considered and rejected**
+
+- **Full axe-core via Puppeteer/Playwright in CI.** Rejected: axe-core's own
+  documentation says its colour-contrast rule needs a real browser to be accurate, which
+  is exactly the property this brief most specifically names; running it without a
+  browser would silently skip that check while still displaying a green result. Adding
+  the browser toolchain to check it properly costs a new Node/npm dependency surface,
+  a large Chromium download in CI, and a second package ecosystem's lockfile alongside
+  `uv.lock`, for the one-time validation of a single static file.
+- **`axe-core` under plain `jsdom`, accepting the documented contrast-check gap.**
+  Rejected: this would let a CI badge imply a WCAG audit ran when the one property most
+  directly named in the brief was silently not checked -- worse than not running it,
+  per this project's first governing principle against claiming a result the evidence
+  does not support.
+- **No programmatic validation at all, only manual visual review.** Rejected outright:
+  manual visual review is exactly what neither reviewer of this project can do (a
+  screen-reader user and a browser-less agent), so it validates nothing for the actual
+  audience.
+- **A contrast check that trusts a third-party colour library's opinion of "accessible"
+  colours.** Rejected in favour of implementing the WCAG 2.1 formula directly: the
+  formula is short, exact, and stated in the specification itself, so implementing it
+  is more auditable than trusting an external library's own interpretation of it.
+
+**Consequences**
+
+- Every future change to `reflow.report.html` is checked, in CI, against the same
+  structural and contrast requirements this ADR names -- a regression (a table missing
+  a caption, a chart no longer paired with a table, a colour pair falling below AA) fails
+  the existing `pytest` job with no additional CI configuration.
+- This project makes no claim to a certified WCAG 2.1 AA conformance audit or an
+  axe-core clean run; it claims exactly what `reflow.report.validate` checks, stated
+  plainly in that module's own docstring and in this ADR, which is the honest scope of
+  what was actually verified.
+- This decision is revisited if a future phase's reporting surface grows into an
+  interactive, frequently-changing UI (where a browser-based regression suite's
+  recurring value would outweigh its one-time setup cost), or if axe-core ships a
+  documented, accurate non-browser contrast-checking mode.

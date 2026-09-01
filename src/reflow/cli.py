@@ -1,6 +1,6 @@
 """The ``reflow`` command-line entry point.
 
-Two subcommands:
+Three subcommands:
 
 - ``reflow execute`` -- runs the Phase 6 bounded-execution benchmark
   (:func:`reflow.eval.execute.run_benchmark`), always dry-run (see that
@@ -12,11 +12,15 @@ Two subcommands:
 - ``reflow replay <payment_id>`` -- Deliverable 3: reconstructs and prints
   one payment's complete decision chain from the append-only audit trail
   (:mod:`reflow.audit.replay`).
+- ``reflow demo`` -- Phase 8 Deliverable 1: the single scripted command the
+  pitch video records, narrating this project's whole arc from committed
+  Phase 2/3/4/6/7 report artefacts (:mod:`reflow.demo`). No credential is
+  read, no network call is made, and no LLM is ever invoked here.
 
 Argument parsing and process wiring are CLI glue, excluded from the
 coverage floor per ``CLAUDE.md``'s carve-out for ``if __name__ ==
 "__main__":``-style entry points; the logic each subcommand delegates to
-is fully covered by ``tests/eval/test_execute.py`` and
+is fully covered by ``tests/eval/test_execute.py``, ``tests/demo/``, and
 ``tests/test_cli.py``.
 """
 
@@ -31,6 +35,9 @@ from pathlib import Path
 from rich.console import Console
 
 from reflow.audit.replay import PaymentNotFoundError, find_records_for_payment, render_replay
+from reflow.demo.data import load_demo_data
+from reflow.demo.pacing import FAST, PACED
+from reflow.demo.runner import run_demo
 from reflow.eval.execute import (
     DEFAULT_AUDIT_TRAIL_HEAD,
     DEFAULT_AUDIT_TRAIL_PATH,
@@ -70,6 +77,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     replay_parser.add_argument("payment_id")
     replay_parser.add_argument("--audit-path", type=Path, default=DEFAULT_AUDIT_TRAIL_PATH)
+
+    demo_parser = subparsers.add_parser(
+        "demo",
+        help="Run the scripted, narrated demo of reflow's full pipeline (no credentials, "
+        "no network, no LLM calls).",
+    )
+    demo_parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip narration pauses (for CI/testing). Never changes what is printed.",
+    )
 
     return parser
 
@@ -131,6 +149,27 @@ def replay_command(args: argparse.Namespace, *, console: Console) -> int:
     return 0
 
 
+def demo_command(args: argparse.Namespace, *, console: Console) -> int:
+    """Run the ``reflow demo`` subcommand.
+
+    Loads every fact the demo narrates from committed Phase 2/3/4/6/7
+    report artefacts (:func:`reflow.demo.data.load_demo_data`) -- no
+    credential is read from the environment, no network call is made, and
+    no LLM is invoked anywhere in this path.
+
+    Args:
+        args: Parsed CLI arguments.
+        console: Where to render the demo.
+
+    Returns:
+        ``0`` on success.
+    """
+    data = load_demo_data()
+    pace = FAST if args.fast else PACED
+    run_demo(console=console, data=data, pace=pace)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover
     """The ``reflow`` console-script entry point.
 
@@ -153,7 +192,9 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover
     console = Console() if sys.stdout.isatty() else Console(width=120)
     if args.command == "execute":
         return execute_command(args, console=console)
-    return replay_command(args, console=console)
+    if args.command == "replay":
+        return replay_command(args, console=console)
+    return demo_command(args, console=console)
 
 
 if __name__ == "__main__":  # pragma: no cover

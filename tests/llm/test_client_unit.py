@@ -39,7 +39,7 @@ class _Answer(BaseModel):
 def _chat_result(
     content: str | None,
     *,
-    finish_reason: str | None = "stop",
+    finish_reason: components.ChatFinishReasonEnum | None = "stop",
     reasoning_tokens: int | None = None,
     cost: float | None = 0.0001,
 ) -> components.ChatResult:

@@ -5,10 +5,17 @@ repository. Read it before making changes. It is project law, not a suggestion.
 
 ## What reflow is
 
-`reflow` is an agent that clusters failed Razorpay payments into root causes, picks a
-bounded recovery action for each cluster, executes that action against Razorpay's
-test-mode APIs, and reports measured recovery against a baseline. It is being built in
-phases; this repository starts from an empty skeleton and grows feature by feature.
+`reflow` is an agent that groups failed Razorpay payments into root causes by
+structured `(code, source, step, reason)` fields (Phase 2 found that clustering free
+text loses to this `GROUP BY` on Razorpay's own catch-all reasons and dropped it from
+the production path -- see ADR-0002), detects incidents by correlating failure bursts
+over time and `(method, bank)` rather than by reading event text (ADR-0003), diagnoses
+each failure through a two-tier deterministic-first/LLM-escalation split (ADR-0004),
+picks a bounded, guardrailed recovery action from a closed action set and executes it
+against Razorpay's test-mode APIs (ADR-0005/ADR-0006), and reports measured, simulated
+recovery against baselines with every decision preserved in an append-only, replayable
+audit trail (ADR-0007). It is being built in phases; this repository starts from an
+empty skeleton and grows feature by feature.
 
 ## Governing principles
 

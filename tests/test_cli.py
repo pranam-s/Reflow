@@ -5,10 +5,11 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from reflow.audit.store import AuditTrailWriter
-from reflow.cli import _build_parser, execute_command, replay_command
+from reflow.cli import _build_parser, demo_command, execute_command, main, replay_command
 from reflow.diagnose.models import Confidence
 from reflow.diagnose.router import DiagnosisTier, EventDiagnosis
 from reflow.taxonomy.remediation import RemediationClass
@@ -135,3 +136,36 @@ def test_replay_subcommand_reports_missing_audit_trail(tmp_path: Path) -> None:
     output = buffer.getvalue()
     assert "no audit trail found" in output
     assert "execute" in output
+
+
+def test_demo_subcommand_defaults_to_fast_false() -> None:
+    parser = _build_parser()
+
+    args = parser.parse_args(["demo"])
+
+    assert args.fast is False
+
+
+def test_demo_subcommand_runs_at_fast_pace_with_no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleep_calls: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda seconds: sleep_calls.append(seconds))
+    parser = _build_parser()
+    args = parser.parse_args(["demo", "--fast"])
+    console, buffer = _console()
+
+    exit_code = demo_command(args, console=console)
+
+    assert exit_code == 0
+    assert sleep_calls == []
+    output = buffer.getvalue()
+    assert "reflow demo" in output
+    assert "BLOCKED" in output
+
+
+def test_main_dispatches_to_demo_subcommand(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("time.sleep", lambda seconds: None)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+
+    exit_code = main(["demo", "--fast"])
+
+    assert exit_code == 0
