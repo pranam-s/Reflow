@@ -589,8 +589,7 @@ LLM was hard to avoid using elsewhere.
   rounding error), or if a future model verified to honour disabled reasoning becomes
   available for judging at lower cost than `openai/gpt-oss-20b`'s reasoning-enabled rate.
 
-### ADR-0005: a closed seven-action set, a sequential guardrail chain, and an
-attempt-number-driven escalation ladder
+### ADR-0005: a closed seven-action set, a sequential guardrail chain, and an attempt-number-driven escalation ladder
 
 **Status:** Accepted (Phase 5)
 
@@ -811,8 +810,7 @@ benchmark numbers in this ADR), consistent with this project's second governing 
   instrument-level (not just method-level) restriction (which would change the
   `DIFFERENT_INSTRUMENT` mapping from `RECOVERY_LINK_NOW` to a real instrument-restricted send).
 
-### ADR-0006: idempotency by catch-and-recover, not by header; an append-only, hash-chained
-audit trail
+### ADR-0006: idempotency by catch-and-recover, not by header; an append-only, hash-chained audit trail
 
 **Status:** Accepted (Phase 6)
 
@@ -959,8 +957,7 @@ nothing but the trail file itself.
   bottleneck -- at that point a database-backed or periodically-checkpointed design would be the
   natural next step, not built here on speculation.
 
-### ADR-0007: a seeded outcome oracle grounded in remediation class, a sensitivity band instead of
-a point estimate, and a model default chosen on measured cost/latency/reliability evidence
+### ADR-0007: a seeded outcome oracle grounded in remediation class, a sensitivity band instead of a point estimate, and a model default chosen on measured cost/latency/reliability evidence
 
 **Status:** Accepted (Phase 7)
 
@@ -1325,3 +1322,140 @@ file. `docs/reports/phase8_report.html` passes every check this validator runs.
   interactive, frequently-changing UI (where a browser-based regression suite's
   recurring value would outweigh its one-time setup cost), or if axe-core ships a
   documented, accurate non-browser contrast-checking mode.
+
+## Diagrams
+
+Two Mermaid diagrams (source under `docs/diagrams/`, also embedded in `README.md`) are the
+architecture documentation's primary visual artefacts, chosen over static images specifically
+because the project's submitter is a screen-reader user and Mermaid source is itself readable
+text, not a picture a screen reader cannot describe.
+
+### End-to-end pipeline
+
+```mermaid
+flowchart TD
+    TAX["Vendored Razorpay taxonomy<br/>data/razorpay_error_reasons.xlsx"] --> CORPUS["Synthetic corpus<br/>50,000 seeded failed-payment events"]
+    CORPUS --> ROOTCAUSE["Root cause: GROUP BY (code, source, step, reason)<br/>beats clustering on the catch-all reasons -- ADR-0002"]
+    CORPUS --> INCIDENT["Incident detection: Poisson-surprise burst detector<br/>over (method, bank), 15-minute buckets -- ADR-0003"]
+    ROOTCAUSE --> TIER1["Tier 1: deterministic lookup<br/>95 of 110 reason codes, 86.056% of events, $0, 0 LLM calls"]
+    ROOTCAUSE --> TIER2A["Tier 2a: ambiguous-reason LLM<br/>15 reason codes, cached, 15 live calls ever"]
+    INCIDENT --> TIER2B["Tier 2b: incident LLM diagnosis<br/>1 uncached call per detected incident"]
+    TIER1 --> POLICY["Policy engine: remediation class to<br/>base action, pure function -- ADR-0005"]
+    TIER2A --> POLICY
+    TIER2B --> POLICY
+    POLICY --> GUARDRAILS["Guardrail chain: 7 guardrails,<br/>fixed order, every verdict recorded -- ADR-0005"]
+    GUARDRAILS --> EXECUTE["Bounded execution: closed 7-action set<br/>against Razorpay test-mode Payment Links API -- ADR-0006"]
+    EXECUTE --> AUDIT["Append-only, hash-chained audit trail<br/>reflow replay &lt;payment_id&gt; -- ADR-0006"]
+    AUDIT --> EVAL["Evaluation: seeded outcome oracle vs<br/>do_nothing / notify_all / notify_all_once -- ADR-0007"]
+```
+
+### Decision flow for a single payment
+
+```mermaid
+flowchart TD
+    START["Failed payment event, diagnosed<br/>(Tier 1 deterministic, or Tier 2 LLM)"] --> BASE["Base action: pure function of<br/>remediation class alone -- ADR-0005"]
+    BASE --> LADDER["Escalation ladder by attempt number:<br/>RECOVERY_LINK_NOW to RECOVERY_LINK_BACKOFF<br/>to SWITCH_METHOD to ESCALATE_HUMAN"]
+    LADDER --> CAND["Candidate action<br/>(what would be sent with zero guardrails)"]
+    CAND --> G1{"1. TerminalReasonGuardrail:<br/>duplicate or already-paid reason?"}
+    G1 -->|"yes"| RECONCILE["Final action: RECONCILE"]
+    G1 -->|"no"| G2{"2. ActiveIncidentGuardrail:<br/>Poisson-surprise incident active on<br/>this (method, bank) right now?"}
+    G2 -->|"yes"| WAIT["Final action: WAIT_BANK_RECOVERY<br/>(deliberately does not chase during a live outage)"]
+    G2 -->|"no"| G3{"3. AmountFloorGuardrail:<br/>amount above the configured floor?"}
+    G3 -->|"no"| NOACT1["Final action: NO_ACTION<br/>(not economically justified)"]
+    G3 -->|"yes"| G4{"4. AttemptCapGuardrail:<br/>attempts within the configured cap?"}
+    G4 -->|"no"| NOACT2["Final action: NO_ACTION<br/>(ladder exhausted, explicit give-up)"]
+    G4 -->|"yes"| G5{"5. ContactCapGuardrail:<br/>customer under daily contact cap?"}
+    G5 -->|"no"| NOACT3["Final action: NO_ACTION<br/>(per-customer contact cap)"]
+    G5 -->|"yes"| G6{"6. CooldownGuardrail:<br/>outside the minimum contact gap?"}
+    G6 -->|"no"| NOACT4["Final action: NO_ACTION<br/>(cooldown window)"]
+    G6 -->|"yes"| G7{"7. QuietHoursGuardrail:<br/>outside the quiet-hours window?"}
+    G7 -->|"no, defer"| DEFER["Final action: RECOVERY_LINK_BACKOFF<br/>(send deferred, not cancelled)"]
+    G7 -->|"yes"| FINAL["Final action: candidate action,<br/>unchanged -- every guardrail passed"]
+    RECONCILE --> RECORD["Recorded in the audit trail:<br/>every guardrail's verdict, pass or block,<br/>hash-chained -- reflow replay &lt;payment_id&gt;"]
+    WAIT --> RECORD
+    NOACT1 --> RECORD
+    NOACT2 --> RECORD
+    NOACT3 --> RECORD
+    NOACT4 --> RECORD
+    DEFER --> RECORD
+    FINAL --> RECORD
+```
+
+Both diagrams were verified to parse as valid Mermaid `flowchart-v2` source using the real
+`mermaid` npm package's own `mermaid.parse()` (not a hand-rolled syntax check), run under Node
+against a `jsdom` document -- not merely eyeballed. See `docs/diagrams/pipeline.mmd` and
+`docs/diagrams/decision_flow.mmd` for the standalone source files.
+
+## External citations
+
+Independent, external evidence that corroborates or bounds this project's own findings, not
+numbers this project measured itself. Every URL below was checked to resolve; sources are marked
+**primary** (the organisation's own account) or **secondary** (reported by someone else about
+that organisation) explicitly, and no number is repeated here that this project could not trace
+to a primary source.
+
+1. **Razorpay's own downtime-detection engineering blog** (primary, Razorpay-authored):
+   <https://engineering.razorpay.com/detecting-downtimes-to-improve-payments-experience-3bc2814152c>.
+   Razorpay's own account of moving their downtime-detection system away from a naive "poll the
+   DB, compute a Success Rate, flag if it drops below a threshold" design -- verified by reading
+   the article's own text: it names exactly that MVP and its accuracy problems -- toward a
+   real-time system keyed on "Payment Method, Issuer, Card Type, etc." This independently
+   converges with this project's `poisson_surprise` detector over `(method, bank)` and with
+   ADR-0003's own argument that an absolute count threshold is scale-dependent by construction
+   (measured directly here: `fixed_threshold`'s precision collapses to 0.264 on the larger,
+   busier train split). Razorpay keys on `(method, issuer, card type)`; this project keys on
+   `(method, bank)` -- convergent in kind (multi-dimensional, entity-scoped, rate-based
+   detection), not identical, and not claimed as validation of this project's exact design.
+2. **The ADA anomaly-detection platform** (primary, Razorpay-authored, published on AWS's own
+   blog): <https://aws.amazon.com/blogs/big-data/how-razorpay-built-real-time-anomaly-detection-with-amazon-msk/>.
+   Razorpay's own reported figures, confirmed by reading the article: sub-30-second anomaly
+   detection, 99.99% uptime, over 500 million transactions/month. Cited as the scale a production
+   Razorpay-side detector operates at; this project's corpus (50,000 events) and live benchmarks
+   are far smaller, offered as context, not as a claim of matching that scale.
+3. **Optimizer** (primary, Razorpay's own blog):
+   <https://razorpay.com/blog/boost-payments-success-rates-with-optimizers-ai-ml-routing/>.
+   Razorpay's own claim, confirmed by reading the article: "up to ~10% increase in Success Rates,"
+   from over 600 million payment data points and 150+ parameters per routing decision. Optimizer
+   routes a transaction *before* it fails (which gateway/PSP to use); reflow acts *after* a
+   transaction has already failed. Adjacent problems on the same domain, not competing claims.
+4. **NPCI OC-149** (primary, PDF, National Payments Corporation of India):
+   <https://www.npci.org.in/PDF/npci/upi/circular/2022/UPI-OC-149-Reduction-of-business-decline-in-UPI.pdf>
+   (NPCI/UPI/OC No. 149/2022-23, 13 May 2022). Verified content, read directly from the PDF: "RBI
+   has advised NPCI to work towards reducing Technical Declines (TD) to below 1% and Business
+   Declines (BD) to below 5%." This is the industry's own regulatory-grade version of the
+   customer-side-vs-bank-side source split this project's `RemediationClass` taxonomy already
+   encodes from Razorpay's vendored spreadsheet (ADR-0002/ADR-0004) -- stated system-wide, at UPI
+   scale, by the network operator itself, independent of this project or of Razorpay.
+   **Verification note:** automated fetch tools (a browser-user-agent `curl` request and this
+   project's `WebFetch` tool alike) received `HTTP 403` from every path on `npci.org.in`,
+   including its bare root domain -- a domain-wide bot-protection policy, not evidence of a
+   broken or incorrect link. This exact document and URL were independently confirmed via a
+   Wayback Machine capture dated 2022-06-28, matching the letter's own dated letterhead; a human
+   reviewer opening the URL in an ordinary browser will see the document.
+5. **RBI's TAT circular** (primary, PDF, Reserve Bank of India):
+   <https://rbi.org.in/commonman/Upload/English/Notification/PDFs/NT6720092019.pdf> (RBI/2019-20/67,
+   "Harmonisation of Turn Around Time (TAT) and customer compensation for failed transactions
+   using authorised Payment Systems," 20 September 2019). Cited deliberately to mark a boundary,
+   not to support a number: this circular governs bank-side **debit-without-credit** on
+   funds-transfer rails (a customer's account debited but the beneficiary never credited, with a
+   mandated reversal/compensation timeline) -- a different failure mode, on different rails, from
+   the gateway-side **authorisation declines** (`card_declined`, `payment_failed`, etc.) this
+   project's entire taxonomy and corpus are built from. ADR-0005 already states plainly that this
+   project's quiet-hours policy default is not a cited TRAI/TCCCPR threshold; this citation exists
+   so a reader does not mistake the RBI TAT regime for covering reflow's problem space either --
+   it does not.
+6. **Razorpay's own "20-25% of payments fail due to avoidable reasons"** (primary, Razorpay's own
+   blog): <https://razorpay.com/blog/razorpay-failed-payment-recovery/>. Verified quote, read
+   directly from the page: "Studies indicate that 20-25% of payments fail due to avoidable
+   reasons, and half of those customers wouldn't return without a nudge." Razorpay's own framing
+   of the size of the problem this project addresses, from the same page that announces their own
+   "Failed Payment Recovery" feature -- see `README.md`'s prior-art section for how reflow differs
+   from it.
+
+**Deliberately not cited:** a widely repeated figure that "technical decline fell 8-10% to
+0.7-0.8%" traces, on inspection, to a spoken remark reported in business press with no primary
+dataset behind it -- it does not meet this project's own bar for a citable number (`CLAUDE.md`'s
+"never invent a number" principle, applied here to citing one, not only to computing one). Any
+figure cited anywhere in this project's documentation that comes from business-press reporting
+rather than the organisation's own account is labelled reported, never presented as that
+organisation's own primary technical claim.

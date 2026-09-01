@@ -1,0 +1,27 @@
+flowchart TD
+    START["Failed payment event, diagnosed<br/>(Tier 1 deterministic, or Tier 2 LLM)"] --> BASE["Base action: pure function of<br/>remediation class alone -- ADR-0005"]
+    BASE --> LADDER["Escalation ladder by attempt number:<br/>RECOVERY_LINK_NOW to RECOVERY_LINK_BACKOFF<br/>to SWITCH_METHOD to ESCALATE_HUMAN"]
+    LADDER --> CAND["Candidate action<br/>(what would be sent with zero guardrails)"]
+    CAND --> G1{"1. TerminalReasonGuardrail:<br/>duplicate or already-paid reason?"}
+    G1 -->|"yes"| RECONCILE["Final action: RECONCILE"]
+    G1 -->|"no"| G2{"2. ActiveIncidentGuardrail:<br/>Poisson-surprise incident active on<br/>this (method, bank) right now?"}
+    G2 -->|"yes"| WAIT["Final action: WAIT_BANK_RECOVERY<br/>(deliberately does not chase during a live outage)"]
+    G2 -->|"no"| G3{"3. AmountFloorGuardrail:<br/>amount above the configured floor?"}
+    G3 -->|"no"| NOACT1["Final action: NO_ACTION<br/>(not economically justified)"]
+    G3 -->|"yes"| G4{"4. AttemptCapGuardrail:<br/>attempts within the configured cap?"}
+    G4 -->|"no"| NOACT2["Final action: NO_ACTION<br/>(ladder exhausted, explicit give-up)"]
+    G4 -->|"yes"| G5{"5. ContactCapGuardrail:<br/>customer under daily contact cap?"}
+    G5 -->|"no"| NOACT3["Final action: NO_ACTION<br/>(per-customer contact cap)"]
+    G5 -->|"yes"| G6{"6. CooldownGuardrail:<br/>outside the minimum contact gap?"}
+    G6 -->|"no"| NOACT4["Final action: NO_ACTION<br/>(cooldown window)"]
+    G6 -->|"yes"| G7{"7. QuietHoursGuardrail:<br/>outside the quiet-hours window?"}
+    G7 -->|"no, defer"| DEFER["Final action: RECOVERY_LINK_BACKOFF<br/>(send deferred, not cancelled)"]
+    G7 -->|"yes"| FINAL["Final action: candidate action,<br/>unchanged -- every guardrail passed"]
+    RECONCILE --> RECORD["Recorded in the audit trail:<br/>every guardrail's verdict, pass or block,<br/>hash-chained -- reflow replay &lt;payment_id&gt;"]
+    WAIT --> RECORD
+    NOACT1 --> RECORD
+    NOACT2 --> RECORD
+    NOACT3 --> RECORD
+    NOACT4 --> RECORD
+    DEFER --> RECORD
+    FINAL --> RECORD
