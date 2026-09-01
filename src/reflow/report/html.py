@@ -20,9 +20,9 @@ screen-reader user, and his reviewing agent has no browser at all.
   *only* as a picture -- the literal requirement, not an approximation of
   it.
 - No colour is ever the sole carrier of meaning. Every verdict this report
-  states in colour (e.g. "WORSE than baseline", "BLOCKED") is spelled out
-  in plain text in the same cell; colour is decoration layered on top of
-  wording that already states the fact on its own.
+  states in colour (e.g. "BELOW baseline (no signal to find)", "BLOCKED") is
+  spelled out in plain text in the same cell; colour is decoration layered on
+  top of wording that already states the fact on its own.
 - WCAG AA contrast: every colour pair used for text is declared once in
   :mod:`reflow.report.colors` and re-verified by
   :mod:`reflow.report.validate` via the WCAG 2.1 contrast formula against
@@ -281,7 +281,7 @@ def _root_cause_section(root_cause: RootCauseData) -> str:
 
     def _verdict(candidate_ari: float, groupby_ari: float) -> str:
         if candidate_ari < groupby_ari - 0.005:
-            return "<span class='verdict-danger'>WORSE than baseline</span>"
+            return "<span class='verdict-danger'>BELOW baseline (no signal to find)</span>"
         return "<span class='verdict-success'>TIES baseline (noise, not signal)</span>"
 
     groupby = root_cause.catchall_groupby

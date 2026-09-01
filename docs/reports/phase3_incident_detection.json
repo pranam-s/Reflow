@@ -1,6 +1,6 @@
 {
   "provenance": {
-    "generated_at": "2026-08-22T20:35:45+00:00",
+    "generated_at": "2026-09-01T10:06:22+00:00",
     "seed": 20260822,
     "n_events": 50000,
     "splits": [
@@ -9,7 +9,7 @@
     ],
     "command": "uv run python -m reflow.eval.incident",
     "library_versions": {
-      "pydantic": "2.13.4",
+      "pydantic": "2.12.5",
       "python": "3.11.15",
       "reflow": "0.1.0"
     },
@@ -34,7 +34,7 @@
       "f1": 0.41791044776119407,
       "event_attribution_accuracy": 0.9976905311778291,
       "background_false_positive_rate": 0.0205528883868336,
-      "runtime_seconds": 0.078621499997098,
+      "runtime_seconds": 0.14813190000131726,
       "time_to_detect_minutes": {
         "n": 42,
         "minimum": 0.0,
@@ -109,7 +109,7 @@
       "f1": 0.0194043321299639,
       "event_attribution_accuracy": 0.2632794457274827,
       "background_false_positive_rate": 0.22140638237785937,
-      "runtime_seconds": 0.08355029999802355,
+      "runtime_seconds": 0.24186029999691527,
       "time_to_detect_minutes": {
         "n": 42,
         "minimum": 0.0,
@@ -184,7 +184,7 @@
       "f1": 0.6621621621621622,
       "event_attribution_accuracy": 0.7344110854503464,
       "background_false_positive_rate": 0.009790078132354326,
-      "runtime_seconds": 0.09705289999692468,
+      "runtime_seconds": 0.20311789998959284,
       "time_to_detect_minutes": {
         "n": 42,
         "minimum": 0.0,
@@ -259,7 +259,7 @@
       "f1": 0.014449339207048459,
       "event_attribution_accuracy": 0.1474413516470159,
       "background_false_positive_rate": 0.26157080548495404,
-      "runtime_seconds": 0.10651959999813698,
+      "runtime_seconds": 0.1782277000020258,
       "time_to_detect_minutes": {
         "n": 41,
         "minimum": 0.0,
@@ -334,7 +334,7 @@
       "f1": 1.0,
       "event_attribution_accuracy": 0.9966159052453468,
       "background_false_positive_rate": 0.0014758332308449145,
-      "runtime_seconds": 0.07654799999727402,
+      "runtime_seconds": 0.0798030000005383,
       "time_to_detect_minutes": {
         "n": 8,
         "minimum": 0.0,
@@ -375,7 +375,7 @@
       "f1": 0.004280363830925629,
       "event_attribution_accuracy": 0.24873096446700507,
       "background_false_positive_rate": 0.538433157053253,
-      "runtime_seconds": 0.12683410000317963,
+      "runtime_seconds": 0.2656914999970468,
       "time_to_detect_minutes": {
         "n": 8,
         "minimum": 0.0,
@@ -416,7 +416,7 @@
       "f1": 0.6399999999999999,
       "event_attribution_accuracy": 0.766497461928934,
       "background_false_positive_rate": 0.004181527487393925,
-      "runtime_seconds": 0.1701656000004732,
+      "runtime_seconds": 0.18918969998776447,
       "time_to_detect_minutes": {
         "n": 8,
         "minimum": 0.0,
@@ -457,7 +457,7 @@
       "f1": 0.003591470258136925,
       "event_attribution_accuracy": 0.13649182177100957,
       "background_false_positive_rate": 0.6010330832615914,
-      "runtime_seconds": 0.1406009999991511,
+      "runtime_seconds": 0.2484503999876324,
       "time_to_detect_minutes": {
         "n": 8,
         "minimum": 0.0,
@@ -500,7 +500,7 @@
       "f1": 0.9968253968253968,
       "event_attribution_accuracy": 0.9513796037437705,
       "background_false_positive_rate": 0.0014747874109636325,
-      "runtime_seconds": 5.112220099996193,
+      "runtime_seconds": 5.332248699996853,
       "time_to_detect_minutes": {
         "n": 42,
         "minimum": 0.0,
@@ -575,7 +575,7 @@
       "f1": 1.0,
       "event_attribution_accuracy": 0.937394247038917,
       "background_false_positive_rate": 0.0002459722051408191,
-      "runtime_seconds": 3.408545600002981,
+      "runtime_seconds": 3.344823899999028,
       "time_to_detect_minutes": {
         "n": 8,
         "minimum": 0.0,

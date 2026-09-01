@@ -134,21 +134,23 @@ down."** This project's answer to that bar is not a design choice argued in the 
 it is a benchmark we ran against our own preferred approach, where it lost, and we
 reported it.
 
-### The clustering bake-off: three real clusterers, all beaten by `GROUP BY`
+### The clustering survey: the structured field already had the answer
 
-Three real clusterers (Drain3, normalised template hashing, TF-IDF+HDBSCAN) were
-benchmarked against the trivial `GROUP BY (code, source, step, reason)` baseline, on the
-catch-all reason codes where free text is the *only* thing left to discriminate on. Under
-the condition Razorpay's own vendored documentation says actually holds in production —
-that Razorpay does not receive the sub-cause behind `card_declined`, `payment_declined`,
-or `payment_failed` at all — every clusterer's advantage evaporated:
+Several clustering approaches were surveyed; three real clusterers (Drain3, normalised
+template hashing, TF-IDF+HDBSCAN) were implemented and benchmarked against the trivial
+`GROUP BY (code, source, step, reason)` baseline, on the catch-all reason codes where free
+text is the *only* thing left to discriminate on. Under the condition Razorpay's own
+vendored documentation says actually holds in production — that Razorpay does not receive
+the sub-cause behind `card_declined`, `payment_declined`, or `payment_failed` at all —
+there is no sub-cause signal in the text for any of them to find, so every candidate
+converges on the baseline or falls below it:
 
 | candidate | opaque-arm ARI (catch-all) | vs. `GROUP BY`'s 0.325 |
 | --- | --- | --- |
 | `GROUP BY` (baseline) | 0.325 | — |
 | Normalised template hashing | 0.325 | tied within noise (±0.005) |
 | TF-IDF + HDBSCAN | 0.325 | tied within noise (±0.005) |
-| **Drain3** | **0.311** | **worse than the baseline it was meant to beat** |
+| **Drain3** | **0.311** | **below baseline (no signal to find)** |
 
 Full sweep across richness levels 1/3/5 and both arms:
 [`docs/reports/phase2_clustering_bakeoff.md`](docs/reports/phase2_clustering_bakeoff.md);
@@ -209,7 +211,7 @@ candidate action.
 | --- | --- | --- | --- |
 | pessimistic | 10,148 | 968 (9.5%) | 937 |
 | **central** | **9,992** | **1,552 (15.5%)** | **1,487 (3.3% of 44,674 orders)** |
-| optimistic | 9,848 | 1,866 (19.0%) | 1,766 |
+| optimistic | 9,848 | 1,866 (18.9%) | 1,766 |
 
 At the central estimate, reflow's guardrails walked away from **1,552 recoveries** and
 **1,487 orders (3.3%)** never recovered by any other path in the simulation as a direct
@@ -285,7 +287,7 @@ idea; it is a different layer underneath it:
 ([`razorpay/razorpay-mcp-server`](https://github.com/razorpay/razorpay-mcp-server)) covers
 payments, orders, refunds, payment links, settlements, and QR codes — but has no
 failure-reason or retry tool, because no such capability exists on Razorpay's API surface
-at all (verified directly against the Payments API, `BUILD_LOG.md`, 2026-08-22). reflow
+at all (verified directly against the Payments API, `BUILD_LOG.md`, 2026-09-01). reflow
 talks to Razorpay's REST API and webhook payloads directly for the same reason.
 
 ## How to reproduce every number
@@ -374,6 +376,6 @@ uv run pytest --cov --cov-report=term-missing
 
 CI (`.github/workflows/ci.yml`) runs exactly this, plus `uv run ty check .` (advisory
 only, per ADR-0001), on a Python 3.11 + 3.13 matrix, on every push and pull request.
-**866 tests, 99.72% branch coverage** (floor: 90%) on both interpreters, verified
+**866 tests, 99.65% branch coverage** (floor: 90%) on both interpreters, verified
 strictly sequentially per this project's own `.venv`-corruption finding
 (`BUILD_LOG.md`, 2026-08-23).

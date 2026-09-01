@@ -67,7 +67,7 @@ def test_build_report_html_states_the_key_headline_numbers() -> None:
     assert "86.056%" in html_text
     assert "128" in html_text
     assert data.demo.guardrail_payment_id in html_text
-    assert "WORSE than baseline" in html_text
+    assert "BELOW baseline (no signal to find)" in html_text
     assert "reflow.webhook.dedup" in html_text
     assert "1,552" in html_text
 

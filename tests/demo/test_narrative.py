@@ -40,7 +40,7 @@ def test_root_cause_beat_states_drain3_lost_and_others_tied() -> None:
 
     text = _render(narrative.build_root_cause_beat(data.root_cause))
 
-    assert "WORSE than baseline" in text
+    assert "BELOW baseline (no signal to find)" in text
     assert text.count("TIES baseline (noise, not signal)") == 2
     assert "ADR-0002" in text
 
