@@ -24,7 +24,7 @@ on a colour terminal.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from rich import box
@@ -275,6 +275,7 @@ def render_replay(
     records: list[AuditRecord],
     *,
     section_numbers: Sequence[str] = _DEFAULT_SECTION_NUMBERS,
+    between_panels: Callable[[int], None] | None = None,
 ) -> None:
     """Print one payment's complete decision chain to ``console``.
 
@@ -292,6 +293,18 @@ def render_replay(
             embedded inside the demo's own numbered beat 5, cannot be
             mistaken for a second, independently-numbered "1" through "6"
             sequence on screen.
+        between_panels: If given, called with the zero-based index of each
+            of the six panels (0 for the payment panel through 5 for the
+            execution-outcome panel) immediately after that panel is
+            printed, once per record in ``records``. This is the seam
+            :mod:`reflow.demo.runner` uses to pause *between* panel
+            groups within its embedded replay (splitting Beat 5's single
+            pause into three so each screenful holds long enough to be
+            read) without this function knowing anything about demo
+            pacing. Defaults to ``None``, under which this function calls
+            nothing extra and behaves exactly as before -- standalone
+            ``reflow replay`` (:func:`reflow.cli.replay_command`) never
+            passes this argument, so its output and timing are unchanged.
 
     Raises:
         ValueError: If ``section_numbers`` does not have exactly six
@@ -308,21 +321,15 @@ def render_replay(
     for index, record in enumerate(records):
         if len(records) > 1:
             console.print(f"[bold]-- record {index + 1} of {len(records)} --[/bold]")
-        console.print(
-            Panel(_header_table(record), title=titles[0], border_style="cyan", box=_BOX_STYLE)
+        tables = (
+            _header_table(record),
+            _error_group_table(record),
+            _diagnosis_table(record),
+            _guardrail_table(record),
+            _decision_table(record),
+            _execution_table(record),
         )
-        console.print(
-            Panel(_error_group_table(record), title=titles[1], border_style="cyan", box=_BOX_STYLE)
-        )
-        console.print(
-            Panel(_diagnosis_table(record), title=titles[2], border_style="cyan", box=_BOX_STYLE)
-        )
-        console.print(
-            Panel(_guardrail_table(record), title=titles[3], border_style="cyan", box=_BOX_STYLE)
-        )
-        console.print(
-            Panel(_decision_table(record), title=titles[4], border_style="cyan", box=_BOX_STYLE)
-        )
-        console.print(
-            Panel(_execution_table(record), title=titles[5], border_style="cyan", box=_BOX_STYLE)
-        )
+        for panel_index, (title, table) in enumerate(zip(titles, tables, strict=True)):
+            console.print(Panel(table, title=title, border_style="cyan", box=_BOX_STYLE))
+            if between_panels is not None:
+                between_panels(panel_index)

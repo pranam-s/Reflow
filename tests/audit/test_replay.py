@@ -232,6 +232,49 @@ def test_render_replay_accepts_sublettered_section_numbers() -> None:
     assert "1. Payment" not in text
 
 
+def test_render_replay_invokes_between_panels_once_per_panel_in_order() -> None:
+    event = make_event()
+    decision = make_decision(event=event)
+    record = build_audit_record(
+        decision=decision,
+        event=event,
+        diagnosis=_diagnosis(),
+        execution=None,
+        sequence=0,
+        prev_hash=None,
+        recorded_at="2026-01-01T00:00:00+00:00",
+    )
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120)
+    seen_panel_indices: list[int] = []
+
+    render_replay(console, [record], between_panels=seen_panel_indices.append)
+
+    assert seen_panel_indices == [0, 1, 2, 3, 4, 5]
+
+
+def test_render_replay_between_panels_never_changes_the_rendered_output() -> None:
+    event = make_event()
+    decision = make_decision(event=event)
+    record = build_audit_record(
+        decision=decision,
+        event=event,
+        diagnosis=_diagnosis(),
+        execution=None,
+        sequence=0,
+        prev_hash=None,
+        recorded_at="2026-01-01T00:00:00+00:00",
+    )
+    text_without_callback = _render_to_text([record])
+
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120)
+    render_replay(console, [record], between_panels=lambda _panel_index: None)
+    text_with_a_no_op_callback = buffer.getvalue()
+
+    assert text_without_callback == text_with_a_no_op_callback
+
+
 def test_render_replay_rejects_wrong_length_section_numbers() -> None:
     event = make_event()
     decision = make_decision(event=event)
