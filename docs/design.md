@@ -206,6 +206,28 @@ clustering candidate wins.
   reasons from 140 predicted groups — it over-splits a handful of reasons whose
   remediation classification is itself ambiguous, but never merges two different
   reasons).
+- **Sentence-embedding clustering** (e.g. a sentence-transformer encoder feeding
+  k-means/HDBSCAN over dense vectors instead of TF-IDF's sparse lexical ones) — surveyed
+  and rejected without being implemented. The variation this bake-off actually measures,
+  at every richness level, is lexical (synonym/word-order/template rewording of the same
+  underlying sentence), not semantic — the opaque arm's own finding is that no candidate
+  recovers sub-cause information the masked text does not structurally contain at all, and
+  a denser embedding of the same absent information is still an embedding of nothing.
+  Embeddings earn their cost when near-duplicate meaning is expressed in genuinely
+  different words; that is not this corpus's failure mode, so building one would add a
+  new model dependency and inference cost to solve a problem this data does not have. Would
+  be reconsidered only if a richer, more lexically-varied catch-all text source appeared.
+- **Asking an LLM to cluster the full event set** (one call, or a small number of calls,
+  asked to group thousands of catch-all events into sub-causes directly) — surveyed and
+  rejected without being implemented, on three grounds independent of whether it would
+  score well: cost scales with event count rather than staying flat like the per-reason-code
+  caching ADR-0004 already relies on, so it does not survive contact with a corpus larger
+  than this one; two runs over the same input are not guaranteed to produce the same
+  grouping, which breaks this project's own reproducibility bar (a fixed seed reproduces
+  every other number in this report); and the resulting groups would not be mechanically
+  auditable back to a specific field the way `GROUP BY`'s grouping key already is, which
+  matters for the same reason ADR-0004 restricts free-form LLM narration to diagnosis, never
+  to the root-causing key itself.
 
 **Consequences**
 
@@ -1022,11 +1044,17 @@ policies at all three sensitivity levels. Full results:
 - **reflow never recovers more absolute money than `notify_all`, at any point in the band**
   (pessimistic 96.1%, central 95.0%, optimistic 97.1% of `notify_all`'s rupees) -- reported as a
   loss, not reframed, per this project's first governing principle.
-- **reflow always beats `do_nothing`**, at every point in the band, by a wide margin (roughly
-  2.1-3.5x `do_nothing`'s recovered rupees across the band).
+- **reflow always beats `do_nothing`**, at every point in the band, by a wide margin (2.67x
+  pessimistic, 3.18x central, 3.48x optimistic -- roughly 2.7-3.5x across the band).
 - **reflow sends 28.4-28.9% fewer contacts than `notify_all`, and 24.6% fewer than the more
   realistic, single-shot `notify_all_once`, across the whole band**, while recovering 95-97% of
-  `notify_all`'s money and 98.2-98.8% of `notify_all_once`'s.
+  `notify_all`'s money and 98.8-101.0% of `notify_all_once`'s. That range is not symmetric around
+  100%: at the pessimistic level, reflow recovers **more** absolute money than `notify_all_once`
+  (48,701,612 vs. 48,242,292 rupees -- 100.95%), not merely a comparable share of it; central (98.83%)
+  and optimistic (99.91%) are the only two points below 100%. Recomputed directly from
+  `docs/reports/phase7_simulation.json`'s per-level `notify_all_once_money_rupees`, since the
+  previously stated 98.2-98.8% range was asserted rather than derived and, in doing so, hid the
+  pessimistic result in reflow's favour.
 - **reflow is cheaper per rupee recovered than both chase baselines at every point in the band**,
   by a stable ~25-26% margin (contacts-per-rupee-recovered 0.000469 vs `notify_all`'s 0.000624 at
   the central estimate).
@@ -1241,8 +1269,8 @@ never as a post-hoc fix:
   not merely by convention, because no information exists anywhere in the document
   *only* inside the hidden figure.
 - No colour is ever the sole carrier of meaning: every verdict a colour decorates
-  ("WORSE than baseline", "BLOCKED") is spelled out in plain text in the same cell,
-  the same pattern `reflow.audit.replay` already established in Phase 6.
+  ("BELOW baseline (no signal to find)", "BLOCKED") is spelled out in plain text in the
+  same cell, the same pattern `reflow.audit.replay` already established in Phase 6.
 - A fixed, small colour palette (`reflow.report.colors`) declares every foreground
   /background pairing the report uses for text once, alongside the WCAG 2.1
   relative-luminance contrast formula implemented from the specification's own maths

@@ -52,7 +52,10 @@
       "level": "pessimistic",
       "reflow_money_rupees": 48701612.0,
       "notify_all_money_rupees": 50662109.0,
+      "notify_all_once_money_rupees": 48242292.0,
       "reflow_as_fraction_of_notify_all_money": 0.9613,
+      "reflow_as_fraction_of_notify_all_once_money": 1.0095,
+      "reflow_recovers_more_money_than_notify_all_once": true,
       "reflow_contacts": 34195,
       "notify_all_contacts": 48087,
       "contact_reduction_vs_notify_all_fraction": 0.2889,
@@ -63,7 +66,10 @@
       "level": "central",
       "reflow_money_rupees": 71874179.0,
       "notify_all_money_rupees": 75677051.0,
+      "notify_all_once_money_rupees": 72722654.0,
       "reflow_as_fraction_of_notify_all_money": 0.9497,
+      "reflow_as_fraction_of_notify_all_once_money": 0.9883,
+      "reflow_recovers_more_money_than_notify_all_once": false,
       "reflow_contacts": 33691,
       "notify_all_contacts": 47192,
       "contact_reduction_vs_notify_all_fraction": 0.2861,
@@ -74,7 +80,10 @@
       "level": "optimistic",
       "reflow_money_rupees": 95225149.0,
       "notify_all_money_rupees": 98088700.0,
+      "notify_all_once_money_rupees": 95306938.0,
       "reflow_as_fraction_of_notify_all_money": 0.9708,
+      "reflow_as_fraction_of_notify_all_once_money": 0.9991,
+      "reflow_recovers_more_money_than_notify_all_once": false,
       "reflow_contacts": 33189,
       "notify_all_contacts": 46353,
       "contact_reduction_vs_notify_all_fraction": 0.2840,
@@ -82,7 +91,7 @@
       "reflow_cost_per_rupee_relative_to_notify_all": 0.7378
     }
   ],
-  "what_this_means": "reflow never recovers more absolute rupees than the naive, unbounded notify_all baseline, at any point in the sensitivity band -- that comparison is reported honestly as a loss, not reframed. What holds across the entire band is: reflow always beats do_nothing; reflow recovers 95.0-97.1% of notify_all's rupees (and 98.2-98.8% of the more realistic notify_all_once baseline's rupees) while sending 28.4-28.9% fewer contacts than notify_all; and reflow is always cheaper per rupee recovered than both chase baselines, by roughly 25-26%. The correct reading is comparable recovery at materially lower customer-contact cost, robust across the whole plausible probability band -- not a win on the single metric of total rupees recovered, which is a different and, on these numbers, false claim.",
+  "what_this_means": "reflow never recovers more absolute rupees than the naive, unbounded notify_all baseline, at any point in the sensitivity band -- that comparison is reported honestly as a loss, not reframed. That is not true of notify_all_once, the more realistic single-shot chase baseline: reflow recovers 95.0-97.1% of notify_all's rupees while sending 28.4-28.9% fewer contacts than notify_all, and against notify_all_once the range is 98.8-101.0%, not symmetric around 100% -- at the pessimistic level reflow recovers MORE absolute money than notify_all_once (48,701,612 vs. 48,242,292 rupees, 100.95%), and only at central (98.83%) and optimistic (99.91%) does it recover slightly less. This is stated plainly rather than only reporting the two points that show a loss, per this project's first governing principle: a result in this project's own favour is reported with the same rigor as one against it. reflow is also always cheaper per rupee recovered than both chase baselines, by roughly 25-26%. The correct reading is comparable-to-better recovery against the realistic chase baseline, and materially lower customer-contact cost against both chase baselines, robust across the whole plausible probability band -- not a win on the single metric of total rupees recovered against notify_all specifically, which remains a loss and is reported as one.",
   "guardrail_opportunity_cost_analysis": {
     "methodology": "For every reflow decision where a guardrail changed an escalatable candidate action (recovery_link_now / recovery_link_backoff / switch_method / escalate_human) into a non-escalatable final action, this analysis additionally scores the same payment attempt's SAME deterministic oracle draw against the pre-guardrail candidate action, using reflow.outcome.oracle.RecoveryOracle.sample_recovery -- the identical mechanism reflow.eval.simulate already uses, since the oracle's draw is shared across actions by design (see reflow.outcome.oracle module docstring) specifically so this kind of counterfactual comparison is well-defined and monotonic. This is a one-off, read-only analysis script built for this report from existing public reflow APIs; it does not modify reflow.eval.simulate or its committed report.",
     "central": {

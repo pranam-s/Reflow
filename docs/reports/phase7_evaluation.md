@@ -54,18 +54,27 @@ and why, and gives the model-default recommendation with its evidence.
 
 ## Sensitivity-band findings (does the headline hold everywhere?)
 
-| level | reflow / notify_all money | contact reduction vs notify_all | reflow cost/rupee vs notify_all | reflow beats do_nothing |
-| --- | --- | --- | --- | --- |
-| pessimistic | 96.1% | 28.9% fewer | 26.0% cheaper | yes |
-| central | 95.0% | 28.6% fewer | 24.8% cheaper | yes |
-| optimistic | 97.1% | 28.4% fewer | 26.2% cheaper | yes |
+| level | reflow / notify_all money | reflow / notify_all_once money | contact reduction vs notify_all | reflow cost/rupee vs notify_all | reflow beats do_nothing |
+| --- | --- | --- | --- | --- | --- |
+| pessimistic | 96.1% | **100.95%** | 28.9% fewer | 26.0% cheaper | yes |
+| central | 95.0% | 98.83% | 28.6% fewer | 24.8% cheaper | yes |
+| optimistic | 97.1% | 99.91% | 28.4% fewer | 26.2% cheaper | yes |
 
 Every one of these findings holds at every point in the band. reflow **never** recovers more
 absolute money than `notify_all` at any point in the band -- that comparison is reported as a
-loss, not reframed. What is robust across the whole plausible probability range is: reflow always
-beats `do_nothing`; reflow recovers roughly 95-97% of `notify_all`'s (and ~98% of
-`notify_all_once`'s) rupees while sending materially fewer contacts; and reflow is always
-cheaper per rupee recovered than both chase baselines, by a stable ~25-26%.
+loss, not reframed, and stays a loss at every point checked. The same is **not** true of
+`notify_all_once`, the more realistic single-shot chase baseline: at the pessimistic level,
+reflow recovers **more** absolute money than `notify_all_once` (48,701,612 vs. 48,242,292
+rupees, 100.95%), not merely a comparable share of it; only at central (98.83%) and optimistic
+(99.91%) does reflow recover slightly less. The true range against `notify_all_once` is
+98.8-101.0%, not the 98.2-98.8% previously (and wrongly) stated here -- that earlier figure was
+asserted rather than derived from `docs/reports/phase7_simulation.json`, and in being wrong it
+happened to hide a result in this project's own favour, which is exactly as much of an accuracy
+failure as the reverse would be. What is robust across the whole plausible probability range is:
+reflow always beats `do_nothing`; reflow recovers roughly 95-97% of `notify_all`'s rupees while
+sending materially fewer contacts; against `notify_all_once` reflow is comparable-to-better,
+never far behind and sometimes ahead; and reflow is always cheaper per rupee recovered than both
+chase baselines, by a stable ~25-26%.
 
 ## What this means, stated plainly
 
@@ -98,7 +107,7 @@ monotonic (see `reflow.outcome.oracle` module docstring).
 | --- | --- | --- | --- | --- |
 | pessimistic | 10,148 | 968 (9.5%) | 967 | 937 |
 | central | 9,992 | 1,552 (15.5%) | 1,548 | 1,487 |
-| optimistic | 9,848 | 1,866 (19.0%) | 1,859 | 1,766 |
+| optimistic | 9,848 | 1,866 (18.9%) | 1,859 | 1,766 |
 
 At the central estimate, **1,487 of 44,674 orders (3.3%)** never recovered by any path in the
 simulation specifically because a guardrail redirected away from an action the same oracle says

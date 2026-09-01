@@ -904,3 +904,24 @@ the findings named plainly rather than quietly patched over or left for someone 
 more trustworthy than one that appears merely lucky. The absolute-path leak in particular is the kind of
 finding that is invisible to every tool this project's CI runs (`ruff`, `mypy`, `pytest` all pass with it
 present) and would only ever have been caught by someone -- or something -- actually looking.
+
+### The Razorpay MCP server's tool surface was evaluated against live docs, but the README cited a `BUILD_LOG.md` date with no matching entry
+
+**What.** `README.md`'s "Prior art, addressed head-on" section states that the Razorpay MCP server
+(`razorpay/razorpay-mcp-server`) was evaluated and not adopted because its tool surface has no
+failure-reason or retry tool, "verified directly against the Payments API, `BUILD_LOG.md`, 2026-08-22."
+No such entry exists in this file on that date, or any date before today: `grep -c "MCP" BUILD_LOG.md`
+returned `0`. The underlying claim is true; the citation pointed at evidence that did not exist.
+
+**Evidence.** A live sweep of Razorpay's own product and API documentation, plus the
+`razorpay/razorpay-mcp-server` repository's own published tool list, confirms its tool surface covers
+payments, orders, refunds, payment links, settlements, and QR codes. It exposes no tool for reading a
+payment's failure reason beyond what the Payments API itself already returns, and no tool for retrying a
+failed payment -- because neither capability exists anywhere on Razorpay's API surface for an MCP tool,
+or any other client, to wrap. This matches, and does not extend, what `reflow` itself already relies on:
+direct REST calls and webhook payloads, not a retry endpoint that has never existed.
+
+**Consequence.** `README.md`'s citation is corrected to point at this entry (2026-09-01, the date this
+evaluation was actually performed and recorded) instead of a date with nothing behind it. The claim
+itself is unchanged and stands: reflow talks to Razorpay's REST API and webhook payloads directly because
+no MCP server, including Razorpay's own, has a failure-reason or retry tool to offer instead.

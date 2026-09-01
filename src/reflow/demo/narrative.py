@@ -17,7 +17,7 @@ column that could truncate uses ``overflow="fold"`` rather than the
 default ``"ellipsis"``, for the same reason: Rich's ellipsis truncation
 inserts the single Unicode character ``U+2026``, not three ASCII periods.
 No cell in any table here relies on colour alone to carry a verdict --
-every comparison ("worse than baseline", "ties within noise", "beats") is
+every comparison ("below baseline", "ties within noise", "beats") is
 spelled out in a plain-text column, exactly as
 :mod:`reflow.audit.replay`'s ``BLOCKED``/``PASSED`` and ``YES``/``NO``
 columns already establish the pattern for this project.
@@ -136,8 +136,9 @@ def build_root_cause_beat(data: RootCauseData) -> Panel:
         f"NMI {data.narrow_nmi:.3f}, ARI {data.narrow_ari:.3f} -- near-perfect, for free.\n\n"
         "On the hard part -- the catch-all reasons where free text is the only clue, and "
         "Razorpay's own documentation says it does not receive the sub-cause -- three real "
-        "clusterers were benchmarked against GROUP BY. All three lost or, at best, tied "
-        "within noise:"
+        "clusterers were benchmarked against GROUP BY. There is no sub-cause signal in the "
+        "text for any of them to find, so every candidate converged on the baseline or fell "
+        "below it:"
     )
     table = Table(show_header=True, header_style="bold", box=_BOX_STYLE)
     table.add_column("Candidate", overflow="fold")
@@ -159,7 +160,7 @@ def build_root_cause_beat(data: RootCauseData) -> Panel:
         f"{drain3.purity:.3f}",
         f"{drain3.nmi:.3f}",
         f"{drain3.ari:.3f}",
-        "WORSE than baseline",
+        "BELOW baseline (no signal to find)",
     )
     template_hash = data.catchall_template_hash
     table.add_row(
