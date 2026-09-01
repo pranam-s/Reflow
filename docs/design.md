@@ -1,13 +1,37 @@
 # Design notes
 
-This document records architectural decisions for `reflow` as they are made. It starts
-as a stub in Phase 0 and grows alongside the codebase.
+This file is reflow's architecture decision record: a log of every real design decision
+this project made, in writing, before the code that implements it — why it was needed,
+what the alternatives were, why each alternative lost, and under what future evidence the
+decision would be revisited. It exists because `CLAUDE.md`'s second governing principle
+requires exactly this: a decision justified honestly ahead of time, never a rationale
+reconstructed afterward to fit whatever got built.
+
+Each of the eight ADRs below follows the same shape — **Context** (the open question),
+**Evidence** (what was actually measured, on the real corpus or against the live API),
+**Decision**, **Alternatives considered and rejected**, and **Consequences** (what this
+commits later work to, and when it would be revisited) — so you can read any one of them
+on its own. They are numbered in the order the corresponding part of the system was
+built, not by importance; ADR-0002 (root-causing) and ADR-0003 (incident detection) are a
+reasonable pair to start with if you only read two. `README.md`'s ADR table links
+directly to each section below, and the "Known technical debt" section near the end names
+what an adversarial review of this codebase found and did not fix, with the reasoning
+either way.
 
 ## Architecture
 
-Not yet designed. Phase 0 is scaffolding only: packaging, tooling, and CI. Clustering,
-recovery-action selection, execution against Razorpay test-mode APIs, and reporting will
-each get a section here once they exist.
+reflow root-causes each failed payment with a structured `GROUP BY (code, source, step,
+reason)` over Razorpay's own webhook fields rather than clustering free text (ADR-0002),
+detects bank/rail incidents by correlating failure bursts over time and `(method, bank)`
+rather than by reading event text (ADR-0003), diagnoses each failure or incident through a
+two-tier deterministic-first/LLM-escalation split (ADR-0004), turns a diagnosis into a
+bounded, guardrailed recovery action from a closed seven-action set and executes it against
+Razorpay's test-mode APIs (ADR-0005/ADR-0006), records every decision — pass or block — in
+an append-only, hash-chained audit trail (ADR-0006), and evaluates the result against
+baseline policies under a sensitivity band (ADR-0007). Each stage below is one ADR, in the
+order it was built. The "Diagrams" section further down this file renders the full pipeline
+and the per-payment decision flow as Mermaid flowcharts; `README.md` carries the same
+architecture condensed for a first read, with the headline numbers attached.
 
 ## Architecture Decision Records (ADRs)
 

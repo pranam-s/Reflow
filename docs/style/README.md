@@ -20,8 +20,10 @@ Each entry links to the source and states, in one line, how it applies in `reflo
   tests mirror the `src/reflow` package structure under `tests/`.
 - [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) — every commit
   message in this repository follows this format (`feat:`, `fix:`, `chore:`, ...).
-- [Keep a Changelog](https://keepachangelog.com) — once the project has user-facing
-  behavior worth logging, `CHANGELOG.md` will follow this format; not needed at Phase 0.
+- [Keep a Changelog](https://keepachangelog.com) — this project shipped as a single
+  submission rather than through versioned user-facing releases, so no `CHANGELOG.md`
+  was needed; `BUILD_LOG.md` is this project's dated record of what changed and why. A
+  fork that starts cutting releases should add `CHANGELOG.md` in this format then.
 - [SemVer](https://semver.org) — `reflow.__version__` and the `pyproject.toml` project
   version follow semantic versioning as features land.
 

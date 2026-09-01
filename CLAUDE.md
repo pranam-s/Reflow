@@ -14,8 +14,9 @@ each failure through a two-tier deterministic-first/LLM-escalation split (ADR-00
 picks a bounded, guardrailed recovery action from a closed action set and executes it
 against Razorpay's test-mode APIs (ADR-0005/ADR-0006), and reports measured, simulated
 recovery against baselines with every decision preserved in an append-only, replayable
-audit trail (ADR-0007). It is being built in phases; this repository starts from an
-empty skeleton and grows feature by feature.
+audit trail (ADR-0007). It was built in phases, each one designed and evaluated before
+being coded, with every phase's decisions recorded as an ADR in `docs/design.md`; the
+project is now complete, and this file continues to govern any further change made to it.
 
 ## Governing principles
 
