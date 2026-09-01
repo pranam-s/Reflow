@@ -622,3 +622,87 @@ information and throws it away.
   only `{"checkout": {"name": ""}}` and fetch returns `options: null`. The API accepts the request, but
   confirming the checkout page visibly restricts methods would need a real browser. Disclosed rather
   than claimed.
+
+---
+
+## 2026-09-01
+
+### The naive spam baseline recovers more absolute money than reflow, at every point in the sensitivity band
+
+**What.** Phase 7's closed-loop simulation (`reflow.eval.simulate`) was expected to show reflow winning
+on some money-recovered comparison. It does not. `notify_all` -- message every failed customer forever,
+no guardrail of any kind -- recovers more absolute rupees than reflow at all three sensitivity levels:
+96.1% (pessimistic), 95.0% (central), 97.1% (optimistic) of `notify_all`'s money is the best reflow ever
+achieves.
+
+**Evidence.** Full results: `docs/reports/phase7_simulation.{json,md}`. Central band: `notify_all`
+recovers ₹75,677,051 with 47,192 contacts; reflow recovers ₹71,874,179 (95.0%) with 33,691 contacts
+(28.6% fewer) and 9,992 guardrail-prevented contacts. This holds at every point in the band, not only the
+central estimate -- it was checked at all three specifically so a single favourable probability could not
+be responsible for the result either way.
+
+**Consequence.** Reported as the finding, per this project's first governing principle -- not reframed,
+not re-scoped, not re-run with different guardrail defaults until reflow wins. The honest, and still
+substantive, claim is comparable recovery (95-97% of `notify_all`'s money, 98%+ of the more realistic
+`notify_all_once` baseline's money) at materially lower contact cost (28%+ fewer contacts, ~25% cheaper
+per rupee recovered), robust across the whole band. `docs/design.md` ADR-0007 records this in full,
+including why a guardrail-bounded policy losing on absolute money is the correct design, not an
+embarrassing result to explain away.
+
+### The guardrails' cost is a real, non-zero number of foregone recoveries, and it was worth measuring exactly
+
+**What.** reflow's aggregate guardrail-prevented-contact count (9,992 at the central estimate) says
+guardrails suppressed a lot of chase attempts, but says nothing about how many of those would actually
+have recovered money. Left unmeasured, this is a plausible-sounding but unquantified cost.
+
+**Evidence.** A one-off, read-only analysis (built from existing public `reflow.outcome.oracle` and
+`reflow.policy` APIs, not a change to `reflow.eval.simulate`) scored every guardrail-blocked escalatable
+candidate action against the same payment attempt's same deterministic oracle draw used for the actual
+decision -- well-defined and monotonic by the oracle's own design (`reflow.outcome.oracle` module
+docstring: a fixed draw shared across actions means a strictly more effective action can never recover
+less often). At the central estimate: 1,552 of 9,992 guardrail-blocked events (15.5%) would have
+recovered under the pre-guardrail action per the same oracle; 1,487 of 44,674 orders (3.3%) never
+recovered by any other path in the simulation as a result.
+
+**Consequence.** This number is now the concrete, cited cost of reflow's lower contact volume in
+`docs/reports/phase7_evaluation.md` and `docs/design.md` ADR-0007, rather than a hand-waved "guardrails
+have some cost." Recorded as a candidate for promotion into `reflow.eval.simulate` proper (with its own
+tests) in a future phase, since this run computed it as an ad hoc script rather than a committed,
+regression-tested measurement.
+
+### The cheapest model was not the fastest one, and it was not close
+
+**What.** Phase 7's live, three-model comparison (`reflow.eval.model_compare`) was expected to confirm
+`deepseek/deepseek-v4-flash`'s cost advantage, already documented 2026-08-22/23 (~20x cheaper than a
+reasoning-mandatory model on a single smoke-test call). It did, more starkly than expected (~35x cheaper
+than `google/gemini-3.7-flash` over 12 real calls) -- but it also surfaced something not previously
+measured: deepseek had the *highest* mean latency of the three models compared (20.3s), despite reasoning
+being disabled, with individual calls ranging from 3.0s to 64.8 seconds.
+
+**Evidence.** `docs/reports/phase7_model_comparison.{json,md}`, live run, 36 calls across
+`deepseek/deepseek-v4-flash`, `google/gemini-3.7-flash`, and `openai/gpt-oss-20b`. `deepseek/deepseek-v4-flash`:
+$0.000553 total cost, 20.303s mean latency, 100% first-attempt JSON validity. `google/gemini-3.7-flash`:
+$0.019636 total cost, 6.707s mean latency (the fastest and tightest of the three), despite 3,136 tokens
+spent on mandatory hidden reasoning across the 12 calls.
+
+**Consequence.** `deepseek/deepseek-v4-flash` is still adopted as Tier 2's shipped default (ADR-0007):
+it is the only one of the three verified live to honour `reasoning_effort="none"`, has a perfect
+first-attempt JSON validity rate, and Tier 2's calls are cached per reason code, never on a
+customer-facing latency path. But "cheap implies fast" is now known, measured, and stated to be false for
+this model on this endpoint, and a future call site that is latency-sensitive should re-measure rather
+than assume otherwise.
+
+### All three compared models agreed perfectly with Tier 1's deterministic table, on reasons Tier 1 never sends them
+
+**What.** Phase 7's model comparison deliberately asked each candidate model to diagnose a small sample
+of reason codes Tier 1 already resolves deterministically (never sent to an LLM in production), purely
+to get a ground-truth-backed agreement number distinct from the judge's plausibility-only endorsement
+rate. All three models -- including the two mandatory-reasoning ones -- agreed with Tier 1's known-correct
+answer on all 6 sampled deterministic reason codes, every time.
+
+**Evidence.** `docs/reports/phase7_model_comparison.json`, `deterministic_agreement_rate: 1.0` for
+`deepseek/deepseek-v4-flash`, `google/gemini-3.7-flash`, and `openai/gpt-oss-20b` alike.
+
+**Consequence.** Independent corroboration, not assumed, that ADR-0002/ADR-0004's 95-of-110
+deterministically-resolved reason codes really are unambiguous in a way an independent model also sees,
+not merely unambiguous to this project's own rule-based parser reading the same vendored text.

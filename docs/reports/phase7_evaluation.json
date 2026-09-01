@@ -1,0 +1,149 @@
+{
+  "honesty_statement": {
+    "summary": "Every recovery figure in this project's Phase 7 reports is a simulated outcome scored by a seeded, hand-built oracle, never an observed real-world rupee. This document measures policy quality against a known, stated, adversarially-inspectable world -- not real recovery -- and says so before presenting a single number.",
+    "points": [
+      "Recovery outcomes are simulated by a seeded oracle (reflow.outcome.oracle.RecoveryOracle), never observed from real customers or a live Razorpay payment succeeding or failing for a real commercial reason.",
+      "What is measured is policy quality against a known-ground-truth world, not real-world rupees: every 'money recovered' figure is the sum of amounts the oracle decided would recover, under probabilities this project itself assigned and disclosed.",
+      "The oracle exists because Razorpay's test mode exposes only a binary pass/fail toggle per payment, not a probability -- there is no sandbox surface that reports 'a card_declined failure recovers 42% of the time given a fresh Payment Link.' A realistic, multi-reason outcome model cannot be obtained from the sandbox; it can only be assumed, honestly and on the record, or not built at all.",
+      "Oracle probabilities derive from Razorpay's own vendored Next Steps remediation classes (reflow.taxonomy.remediation.RemediationClass), not invented per-reason-code numbers -- two free parameters per class (a no-action self-recovery floor and a textbook-action ceiling), never per reason code, and never tuned after seeing a simulation result.",
+      "Results are reported across a three-point sensitivity band (pessimistic / central / optimistic) precisely so no single assumed probability carries the project's conclusion -- every headline claim below is checked against whether it holds at every point in that band, not only at the central estimate."
+    ]
+  },
+  "provenance": {
+    "generated_at": "2026-09-01T00:00:00+00:00",
+    "sources": [
+      "docs/reports/phase7_simulation.json",
+      "docs/reports/phase7_simulation.md",
+      "docs/reports/phase7_model_comparison.json",
+      "docs/reports/phase7_model_comparison.md",
+      "docs/reports/phase4_diagnosis.json",
+      "docs/reports/phase5_policy.md",
+      "docs/reports/phase6_execution.md",
+      "docs/design.md (ADR-0002 through ADR-0007)",
+      "BUILD_LOG.md"
+    ],
+    "reproduce_simulation_command": "uv run python -m reflow.eval.simulate",
+    "reproduce_model_comparison_command": "uv run --env-file .env python -m reflow.eval.model_compare",
+    "seed": 20260822,
+    "n_events": 50000
+  },
+  "headline_comparison_central_band": {
+    "reflow_money_rupees": 71874179.0,
+    "notify_all_money_rupees": 75677051.0,
+    "notify_all_once_money_rupees": 72722654.0,
+    "do_nothing_money_rupees": 22584778.0,
+    "reflow_as_fraction_of_notify_all_money": 0.9497,
+    "reflow_as_fraction_of_notify_all_once_money": 0.9883,
+    "reflow_contacts": 33691,
+    "notify_all_contacts": 47192,
+    "notify_all_once_contacts": 44674,
+    "contact_reduction_vs_notify_all_fraction": 0.2861,
+    "contact_reduction_vs_notify_all_once_fraction": 0.2457,
+    "guardrail_prevented_contacts": 9992,
+    "contacts_per_rupee_recovered_reflow": 0.000469,
+    "contacts_per_rupee_recovered_notify_all": 0.000624,
+    "contacts_per_rupee_recovered_notify_all_once": 0.000614,
+    "reflow_cost_per_rupee_relative_to_notify_all": 0.7516,
+    "reflow_beats_do_nothing": true,
+    "reflow_beats_notify_all_on_absolute_money": false
+  },
+  "band_summary": [
+    {
+      "level": "pessimistic",
+      "reflow_money_rupees": 48701612.0,
+      "notify_all_money_rupees": 50662109.0,
+      "reflow_as_fraction_of_notify_all_money": 0.9613,
+      "reflow_contacts": 34195,
+      "notify_all_contacts": 48087,
+      "contact_reduction_vs_notify_all_fraction": 0.2889,
+      "guardrail_prevented_contacts": 10148,
+      "reflow_cost_per_rupee_relative_to_notify_all": 0.7397
+    },
+    {
+      "level": "central",
+      "reflow_money_rupees": 71874179.0,
+      "notify_all_money_rupees": 75677051.0,
+      "reflow_as_fraction_of_notify_all_money": 0.9497,
+      "reflow_contacts": 33691,
+      "notify_all_contacts": 47192,
+      "contact_reduction_vs_notify_all_fraction": 0.2861,
+      "guardrail_prevented_contacts": 9992,
+      "reflow_cost_per_rupee_relative_to_notify_all": 0.7516
+    },
+    {
+      "level": "optimistic",
+      "reflow_money_rupees": 95225149.0,
+      "notify_all_money_rupees": 98088700.0,
+      "reflow_as_fraction_of_notify_all_money": 0.9708,
+      "reflow_contacts": 33189,
+      "notify_all_contacts": 46353,
+      "contact_reduction_vs_notify_all_fraction": 0.2840,
+      "guardrail_prevented_contacts": 9848,
+      "reflow_cost_per_rupee_relative_to_notify_all": 0.7378
+    }
+  ],
+  "what_this_means": "reflow never recovers more absolute rupees than the naive, unbounded notify_all baseline, at any point in the sensitivity band -- that comparison is reported honestly as a loss, not reframed. What holds across the entire band is: reflow always beats do_nothing; reflow recovers 95.0-97.1% of notify_all's rupees (and 98.2-98.8% of the more realistic notify_all_once baseline's rupees) while sending 28.4-28.9% fewer contacts than notify_all; and reflow is always cheaper per rupee recovered than both chase baselines, by roughly 25-26%. The correct reading is comparable recovery at materially lower customer-contact cost, robust across the whole plausible probability band -- not a win on the single metric of total rupees recovered, which is a different and, on these numbers, false claim.",
+  "guardrail_opportunity_cost_analysis": {
+    "methodology": "For every reflow decision where a guardrail changed an escalatable candidate action (recovery_link_now / recovery_link_backoff / switch_method / escalate_human) into a non-escalatable final action, this analysis additionally scores the same payment attempt's SAME deterministic oracle draw against the pre-guardrail candidate action, using reflow.outcome.oracle.RecoveryOracle.sample_recovery -- the identical mechanism reflow.eval.simulate already uses, since the oracle's draw is shared across actions by design (see reflow.outcome.oracle module docstring) specifically so this kind of counterfactual comparison is well-defined and monotonic. This is a one-off, read-only analysis script built for this report from existing public reflow APIs; it does not modify reflow.eval.simulate or its committed report.",
+    "central": {
+      "guardrail_blocked_events": 9992,
+      "events_where_the_blocked_action_would_have_recovered_per_oracle": 1552,
+      "orders_affected": 1548,
+      "orders_never_recovered_by_any_other_path": 1487,
+      "orders_never_recovered_as_fraction_of_all_orders": 0.0333
+    },
+    "pessimistic": {
+      "guardrail_blocked_events": 10148,
+      "events_where_the_blocked_action_would_have_recovered_per_oracle": 968,
+      "orders_affected": 967,
+      "orders_never_recovered_by_any_other_path": 937
+    },
+    "optimistic": {
+      "guardrail_blocked_events": 9848,
+      "events_where_the_blocked_action_would_have_recovered_per_oracle": 1866,
+      "orders_affected": 1859,
+      "orders_never_recovered_by_any_other_path": 1766
+    },
+    "interpretation": "At the central estimate, roughly 15.5% of the 9,992 guardrail-blocked chase/escalation events (1,552 events, 1,548 distinct orders) would have recovered under the same oracle had the guardrail not intervened; 1,487 orders (3.3% of all 44,674 orders in the corpus) never recovered by any other path in the simulation as a result. This is the concrete, measured size of the deliberate trade-off reflow's guardrails make -- fewer contacts, and a real, non-zero, quantified number of foregone recoveries among them, not a hidden cost."
+  },
+  "exception_list_ref": "See docs/reports/phase7_evaluation.md, 'What the system could not resolve' section, for the full 14-item exception list with citations.",
+  "model_comparison_summary": {
+    "report_json": "docs/reports/phase7_model_comparison.json",
+    "report_md": "docs/reports/phase7_model_comparison.md",
+    "models_compared": [
+      "deepseek/deepseek-v4-flash",
+      "google/gemini-3.7-flash",
+      "openai/gpt-oss-20b"
+    ],
+    "sample_size_per_model": 12,
+    "recommended_default_model": "deepseek/deepseek-v4-flash",
+    "selection_rule": "Pre-committed: among models with zero call errors, pick the lowest total measured cost, tie-broken by lower mean latency.",
+    "headline_numbers": {
+      "deepseek/deepseek-v4-flash": {
+        "total_cost_usd": 0.000553,
+        "mean_latency_seconds": 20.303,
+        "total_reasoning_tokens": 0,
+        "first_attempt_json_valid_rate": 1.0,
+        "deterministic_agreement_rate": 1.0
+      },
+      "google/gemini-3.7-flash": {
+        "total_cost_usd": 0.019636,
+        "mean_latency_seconds": 6.707,
+        "total_reasoning_tokens": 3136,
+        "first_attempt_json_valid_rate": 0.9167,
+        "deterministic_agreement_rate": 1.0
+      },
+      "openai/gpt-oss-20b": {
+        "total_cost_usd": 0.000956,
+        "mean_latency_seconds": 15.599,
+        "total_reasoning_tokens": 4599,
+        "first_attempt_json_valid_rate": 0.6667,
+        "deterministic_agreement_rate": 1.0
+      }
+    },
+    "surprising_finding": "deepseek/deepseek-v4-flash is roughly 35x cheaper than google/gemini-3.7-flash and had a perfect first-attempt JSON validity rate, but it was NOT the fastest model measured: its mean latency (20.3s) was the highest of the three, with individual calls ranging from 3.0s to 64.8s, despite reasoning being disabled. google/gemini-3.7-flash, despite mandatory reasoning (3136 reasoning tokens total), had the lowest and tightest mean latency (6.7s, range 3.2-14.5s). All three models reached perfect agreement with Tier 1's deterministic table on every sampled already-resolved reason code, which is independent corroboration that those reasons really are unambiguous, not merely unambiguous to this project's own rule-based parser.",
+    "actual_spend_usd": 0.021145
+  },
+  "total_phase7_llm_spend_usd": 0.021145,
+  "spend_cap_usd": 0.50
+}
