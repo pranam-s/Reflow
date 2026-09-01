@@ -1459,3 +1459,97 @@ dataset behind it -- it does not meet this project's own bar for a citable numbe
 figure cited anywhere in this project's documentation that comes from business-press reporting
 rather than the organisation's own account is labelled reported, never presented as that
 organisation's own primary technical claim.
+
+## Known technical debt
+
+An independent, adversarial review of this codebase was run on 2026-09-01, the day before
+submission, specifically to find what a reviewer would find rather than wait for one to find it
+(`BUILD_LOG.md`, 2026-09-01). Two findings from that review were fixed outright before this section
+was written: a `src/reflow` package-`__init__.py` re-export inconsistency (`docs/style/README.md`
+now states the convention plainly) and three committed report artefacts that leaked the author's
+absolute local Windows path (scrubbed at the source and regenerated -- see `BUILD_LOG.md`). The four
+findings below were **not** fixed. Each is a real, named tradeoff, not an oversight nobody noticed,
+and each is recorded here rather than left for a reader to discover by reading imports.
+
+1. **`src/reflow/eval` was never designed as a package; it grew as seven independent report
+   generators that happen to share a directory.** `reflow.eval.clustering`, `.diagnose`, `.execute`,
+   `.incident`, `.model_compare`, `.policy`, and `.simulate` each independently define their own
+   `Provenance` dataclass, their own `_library_versions()` helper, and their own `to_json_dict`/
+   `to_markdown` pair. `generated_at=datetime.now(UTC).isoformat(timespec="seconds")` is copy-pasted
+   across all seven. The seed literal `20260822` is independently re-declared in **eight** files
+   (those seven plus `reflow.demo.data`) and stays consistent only because nobody has changed one
+   without grepping for the rest. `reflow.eval.opacity`, `reflow.eval.metrics`, and `reflow.eval.judge`
+   are the exceptions -- genuine shared library code, imported by more than one of the seven
+   generators, not duplicated by them. This was not refactored, on purpose: every one of the seven
+   generators' exact JSON/markdown output is compared byte-for-byte against a committed artefact
+   under `docs/reports/` (directly, for `docs/reports/phase8_report.html`'s own generator via
+   `tests/report/test_html.py::test_committed_report_matches_the_generator_output`; indirectly for
+   the rest, via every downstream reader of those artefacts). A structural refactor the night before
+   submission -- extracting one shared `Provenance`/`_library_versions`/serialisation module -- risks
+   reordering dict keys or otherwise perturbing byte-for-byte output, forcing a full regeneration of
+   every affected artefact for a purely cosmetic gain. The honest tradeoff is a green, submittable
+   repository over a structurally cleaner `eval` package; this is recorded here so it reads as a
+   decision, not as something nobody looked at.
+2. **Three independent, stringly-typed parsers exist for the same `docs/reports/*.json` artefacts:**
+   `reflow.policy.diagnosis_source`, `reflow.demo.data`, and `reflow.report.data`. The latter two even
+   duplicate a byte-identical `_load_json` helper. Every other external boundary in this project --
+   LLM structured output (`reflow.diagnose.models`), the Razorpay Downtime API and its webhooks
+   (`reflow.incident.downtime_api`), webhook payload parsing (`reflow.taxonomy.signal.FailureSignal`)
+   -- uses `pydantic.BaseModel` for exactly this reason: a renamed or removed field is caught by
+   validation at the boundary, with a legible error, not three lines deeper as a `KeyError` at
+   runtime. These three parsers instead read `dict[str, Any]` and index into it with bare string
+   keys, so a future rename of any field in a `docs/reports/*.json` report (e.g. renaming
+   `"phase4_report_path"`, the very field Task 2 of this review's fix touched) would `KeyError` at
+   runtime in three separate places, with `mypy` powerless to catch any of them ahead of time -- `Any`
+   silences it by construction.
+3. **`reflow.policy` sources its 15 live ambiguous-reason diagnoses from a committed evaluation
+   artefact**, not from a database or a live diagnosis call: `reflow.policy.diagnosis_source`'s
+   `DEFAULT_PHASE4_REPORT_PATH` points straight at `docs/reports/phase4_diagnosis.json`. This is
+   well-reasoned and already documented in that module's own docstring (Phase 4's 15 ambiguous-reason
+   diagnoses are cached by construction -- one LLM call per reason code, ever, regardless of corpus
+   size -- so re-deriving them from anywhere else would either cost a second live call for no reason
+   or silently drift from what Phase 4 actually measured). But it genuinely means a report generated
+   by an evaluation harness is also, quietly, this project's production data source for those 15
+   reasons -- a reader tracing `reflow.policy`'s inputs should be told this outright, in one place,
+   rather than discovering it by following an import into `reflow.eval`'s own output directory.
+4. **The exception hierarchy is inconsistent across packages.** `reflow.execute` (`ExecuteError`) and
+   `reflow.llm` (`LlmError`) each define a package-level base exception every other error in that
+   package inherits from, so a caller can `except ExecuteError` or `except LlmError` to catch
+   "anything this package raises." Every other package that raises a typed error --
+   `reflow.audit.replay.PaymentNotFoundError`, `reflow.outcome.oracle.UnmodeledRemediationClassError`,
+   `reflow.policy.actions.UnmappedRemediationClassError`, `reflow.policy.diagnosis_source.MissingAmbiguousDiagnosisError`,
+   `reflow.taxonomy.reasons.ReasonSpreadsheetError`, `reflow.taxonomy.remediation.TaxonomyDriftError`
+   -- extends `ValueError` directly instead, with no shared package-level base. A caller of those
+   packages has no single type to catch "anything `reflow.policy` raises" the way they can for
+   `reflow.execute` or `reflow.llm`; they either catch bare `ValueError` (too broad -- it also catches
+   an unrelated `ValueError` from anywhere else in the call stack) or enumerate every concrete
+   exception type by hand.
+
+**What the review confirmed is sound**, briefly and without gloating:
+
+- The dependency graph across the twelve non-`eval`, non-CLI packages (`taxonomy`, `corpus`,
+  `signature`, `cluster`, `incident`, `diagnose`, `policy`, `llm`, `execute`, `audit`, `outcome`,
+  `webhook`) is a genuine, cycle-free DAG -- traced edge by edge, there is no pair of packages that
+  import each other, directly or transitively.
+- Every `typing.Protocol` in `src/reflow` (`Clusterer`, `IncidentDetector`, `Guardrail`,
+  `JsonCompleter`, `PaymentLinkGateway`, `RecoveryScorer`) is structurally satisfied by at least one
+  real implementation plus an independently-written second one: three (`Clusterer`,
+  `IncidentDetector`, `Guardrail`) by multiple genuine production implementations (four, four, and
+  seven respectively); the other three (`JsonCompleter`, `PaymentLinkGateway`, `RecoveryScorer`) by
+  exactly one real implementation plus a deliberate test-only fake, used specifically so unit tests
+  never need live credentials, a network connection, or an LLM call. Stated precisely rather than
+  overstated: not every Protocol has a *second real* implementation, but every one has a second
+  *independent* one.
+- The dataclass/pydantic boundary split is principled and has no exception: every
+  `pydantic.BaseModel` in `src/reflow` sits at an external boundary -- LLM structured-output response
+  schemas (`reflow.diagnose.models`), the Razorpay Downtime API and its webhooks
+  (`reflow.incident.downtime_api`), and webhook payload parsing
+  (`reflow.taxonomy.signal.FailureSignal`) -- while every internal domain object (`PaymentEvent`,
+  `Decision`, `AuditRecord`, `ExecutionRecord`, and so on) is a plain `@dataclass`. No internal object
+  uses `BaseModel`, and no external-facing schema uses a plain dataclass instead.
+- `reflow.signature` and `reflow.cluster` are verifiably unreachable from the production path: every
+  import of either package outside itself is confined to `reflow.eval.clustering` and
+  `reflow.eval.metrics` (the Phase 2 clustering bake-off and its shared scoring code); `reflow.cli`
+  and every production package (`policy`, `diagnose`, `execute`, `audit`, `demo`, `report`,
+  `incident`, `outcome`, `webhook`) import neither. Both packages are retained deliberately, as
+  reproducible evidence for ADR-0002's rejection of clustering, not as dead weight nobody noticed.

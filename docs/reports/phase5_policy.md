@@ -1,11 +1,11 @@
 # Phase 5 policy-engine benchmark results
 
-- Generated at: 2026-08-22T23:13:29+00:00
+- Generated at: 2026-09-01T08:22:46+00:00
 - Command: `uv run python -m reflow.eval.policy`
 - Seed: 20260822
 - Corpus size: 50000
-- Phase 4 report: `L:\projects\buildathon\Reflow\docs\reports\phase4_diagnosis.json`
-- Library versions: pydantic=2.13.4, python=3.11.15, reflow=0.1.0
+- Phase 4 report: `docs/reports/phase4_diagnosis.json`
+- Library versions: pydantic=2.12.5, python=3.11.15, reflow=0.1.0
 - Note: No LLM call and no live Razorpay API call is made anywhere in this benchmark. The 15 ambiguous reason codes' remediation classes are loaded from the already-committed Phase 4 report at zero marginal spend -- see reflow.policy.diagnosis_source module docstring.
 - Note: Active-incident detection reruns the ADR-0003-recommended poisson_surprise detector at (method, bank) granularity over the full corpus: a pure statistical computation, not an LLM call, and the same detector/granularity Phase 3 and Phase 4 used.
 - Note: Guardrail fire counts and the over-contact reduction compare each decision's escalation -ladder candidate_action (what would have been sent with zero guardrails) against its final_action (what the full guardrail chain actually decided).
