@@ -27,7 +27,15 @@ def test_paced_pace_gives_the_guardrail_beat_the_most_time() -> None:
         PACED.limitations_seconds,
         PACED.outro_seconds,
     )
-    assert PACED.guardrail_seconds >= max(fields)
+    guardrail_total = (
+        PACED.guardrail_context_seconds
+        + PACED.guardrail_chain_seconds
+        + PACED.guardrail_decision_seconds
+    )
+    assert guardrail_total >= max(fields)
+    assert PACED.guardrail_chain_seconds >= max(
+        PACED.guardrail_context_seconds, PACED.guardrail_decision_seconds
+    )
 
 
 def test_pause_does_not_sleep_for_zero_seconds() -> None:
@@ -51,7 +59,9 @@ def test_running_a_full_fast_pace_takes_negligible_wall_clock_time() -> None:
         root_cause_seconds=0.0,
         incident_seconds=0.0,
         routing_seconds=0.0,
-        guardrail_seconds=0.0,
+        guardrail_context_seconds=0.0,
+        guardrail_chain_seconds=0.0,
+        guardrail_decision_seconds=0.0,
         results_seconds=0.0,
         limitations_seconds=0.0,
         outro_seconds=0.0,
@@ -63,7 +73,9 @@ def test_running_a_full_fast_pace_takes_negligible_wall_clock_time() -> None:
         custom.root_cause_seconds,
         custom.incident_seconds,
         custom.routing_seconds,
-        custom.guardrail_seconds,
+        custom.guardrail_context_seconds,
+        custom.guardrail_chain_seconds,
+        custom.guardrail_decision_seconds,
         custom.results_seconds,
         custom.limitations_seconds,
         custom.outro_seconds,

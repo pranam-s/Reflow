@@ -77,4 +77,4 @@ def test_run_demo_at_paced_pace_sleeps_for_every_beat() -> None:
 
     slept_seconds = [call.args[0] for call in mock_sleep.call_args_list]
     assert sum(slept_seconds) == PACED.total_seconds
-    assert len(slept_seconds) == 9
+    assert len(slept_seconds) == 11

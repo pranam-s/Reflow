@@ -27,9 +27,18 @@ class Pace:
             clustering).
         incident_seconds: Pause after Beat 3 (incident detection).
         routing_seconds: Pause after Beat 4 (the routing split).
-        guardrail_seconds: Pause after Beat 5 (the guardrail refusing to
-            act, plus the full replay) -- the longest pause, since this
-            beat carries the most content to narrate over.
+        guardrail_context_seconds: Pause after Beat 5's intro plus the
+            embedded replay's payment/root-cause/diagnosis panels
+            (5, 5a-5c) -- the first of Beat 5's three bursts, split out so
+            this screenful renders and holds before the next one starts.
+        guardrail_chain_seconds: Pause after the embedded replay's
+            guardrail-chain panel alone (5d) -- the second of Beat 5's
+            three bursts, and the longest pause of the whole demo, since
+            5d is the single most information-dense screen: every
+            guardrail evaluated, blocked or passed, with its reason.
+        guardrail_decision_seconds: Pause after the embedded replay's
+            decision/execution panels and Beat 5's continuation (5e, 5f,
+            "5. (continued)") -- the third of Beat 5's three bursts.
         results_seconds: Pause after Beat 6 (the results table).
         limitations_seconds: Pause after Beat 7 (honest limitations).
         outro_seconds: Pause after the closing summary.
@@ -40,7 +49,9 @@ class Pace:
     root_cause_seconds: float
     incident_seconds: float
     routing_seconds: float
-    guardrail_seconds: float
+    guardrail_context_seconds: float
+    guardrail_chain_seconds: float
+    guardrail_decision_seconds: float
     results_seconds: float
     limitations_seconds: float
     outro_seconds: float
@@ -60,7 +71,9 @@ class Pace:
             + self.root_cause_seconds
             + self.incident_seconds
             + self.routing_seconds
-            + self.guardrail_seconds
+            + self.guardrail_context_seconds
+            + self.guardrail_chain_seconds
+            + self.guardrail_decision_seconds
             + self.results_seconds
             + self.limitations_seconds
             + self.outro_seconds
@@ -73,7 +86,9 @@ PACED: Pace = Pace(
     root_cause_seconds=24.0,
     incident_seconds=22.0,
     routing_seconds=20.0,
-    guardrail_seconds=35.0,
+    guardrail_context_seconds=10.0,
+    guardrail_chain_seconds=13.0,
+    guardrail_decision_seconds=12.0,
     results_seconds=22.0,
     limitations_seconds=15.0,
     outro_seconds=8.0,
@@ -81,7 +96,12 @@ PACED: Pace = Pace(
 """The default pace: roughly 172 seconds (~2 minutes 52 seconds) of
 deliberate pauses, within the phase brief's 2.5-3 minute target, spread so
 the single most consequential beat (the guardrail refusing to act) gets
-the most room."""
+the most room. That beat's single pause is itself split into three
+(``guardrail_context_seconds`` + ``guardrail_chain_seconds`` +
+``guardrail_decision_seconds`` = 35.0, unchanged from the single pause
+this replaced) so each of Beat 5's three screenfuls holds long enough to
+be read before the next one renders, instead of one 35-second pause after
+everything has already scrolled past."""
 
 FAST: Pace = Pace(
     intro_seconds=0.0,
@@ -89,7 +109,9 @@ FAST: Pace = Pace(
     root_cause_seconds=0.0,
     incident_seconds=0.0,
     routing_seconds=0.0,
-    guardrail_seconds=0.0,
+    guardrail_context_seconds=0.0,
+    guardrail_chain_seconds=0.0,
+    guardrail_decision_seconds=0.0,
     results_seconds=0.0,
     limitations_seconds=0.0,
     outro_seconds=0.0,
