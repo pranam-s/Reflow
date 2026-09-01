@@ -958,3 +958,215 @@ nothing but the trail file itself.
   -hash design's linear resume/verify cost (reading every prior line to find the chain tip) a real
   bottleneck -- at that point a database-backed or periodically-checkpointed design would be the
   natural next step, not built here on speculation.
+
+### ADR-0007: a seeded outcome oracle grounded in remediation class, a sensitivity band instead of
+a point estimate, and a model default chosen on measured cost/latency/reliability evidence
+
+**Status:** Accepted (Phase 7)
+
+**Context**
+
+Phases 2-6 built diagnosis, policy, and bounded execution against Razorpay's real test-mode APIs,
+but never closed the loop: nothing in this project had, until now, measured whether any decision
+actually *recovered* a payment, because nothing had an outcome model to consult. Razorpay's test
+mode itself cannot supply one -- it exposes a binary force-success/force-failure toggle per
+payment, never a probability, so "does a fresh Payment Link recover a `card_declined` failure 40%
+of the time or 60%" is not a question the sandbox can answer. This phase had to decide, honestly
+and in writing before building anything, how to simulate outcomes without either inventing
+unfounded numbers or refusing to measure anything at all; how to report a claim built on those
+numbers without letting one contested assumption carry it; how to finally close the one concrete
+gap ADR-0005 named without pretending an offline evaluation had a real decision history it never
+had; and which model to ship as Tier 2's default, a question every prior phase deliberately left
+open pending exactly this kind of evidence (ADR-0004's Alternatives section, `BUILD_LOG.md`
+2026-08-23).
+
+**The oracle is grounded in `Next Steps` semantics, not invented per-reason numbers**
+
+`reflow.outcome.oracle.RecoveryOracle` assigns exactly two free parameters per
+`reflow.taxonomy.remediation.RemediationClass` -- ten classes, twenty numbers total, never one
+per reason code (110 of those) and never one per action (seven of those, which would have been
+a 70-cell matrix invented from nothing): a no-action self-recovery floor
+(`_SELF_RECOVERY_RATE`) and a ceiling for the textbook-correct action
+(`_ACTION_CEILING`). Both orderings track the taxonomy the same way ADR-0002 and ADR-0004 already
+read it by hand: `RETRY_SAME` ("nothing needs fixing, just reattempt") gets this module's highest
+floor and ceiling; `MERCHANT_ACTION` and `MERCHANT_CONTACT_RAZORPAY` (the fix is in the merchant's
+or Razorpay's court, never the customer's) get its lowest. Whether a *specific* action taken
+against a *specific* class earns full credit toward that ceiling or a much smaller, fixed fraction
+(`_NONNATIVE_ACTION_FIT`) is decided by asking `reflow.policy.actions.base_action_for` a single
+question -- is this the class's own textbook action -- rather than by hand-writing a
+ten-class-by-seven-action grid of mostly-unjustifiable numbers. This is the same discipline
+ADR-0002 and ADR-0003 already used: measure from what the taxonomy's own text already says,
+never fabricate a number merely because a cell in a matrix needs filling.
+
+**A sensitivity band, not a point estimate, because the primary contested claim is "does acting
+help, and by how much"**
+
+Every headline number in `docs/reports/phase7_simulation.md` and this ADR is reported at three
+points (`SensitivityLevel.PESSIMISTIC` / `CENTRAL` / `OPTIMISTIC`), scaling two distinct
+quantities independently: the *uplift* any action provides over its class's floor (the wide band,
+`0.6`/`1.0`/`1.4`, since "how effective is a merchant's specific intervention" is exactly what
+this whole project exists to measure and is the most contestable number in the oracle), and the
+no-action floor itself (the narrower band, `0.8`/`1.0`/`1.2`, since ambient customer behaviour
+absent any intervention is a less contested quantity, but still a real assumption that still
+moves rather than being pinned immune from doubt). A band that only widened the case *for* acting
+would not survive an attack on the one probability held fixed; this project's own governing
+principle (results are not fitted to a headline) required scaling both. Every claim in this
+project's reports is checked against whether it holds at all three points, and is reported as
+holding, or not, honestly either way -- see Evidence below.
+
+**Evidence**
+
+The full closed-loop simulation (`reflow.eval.simulate`, seed `20260822`, 50,000 events, zero
+marginal LLM cost since diagnoses are Phase 4's already-committed ones) ran all four compared
+policies at all three sensitivity levels. Full results:
+`docs/reports/phase7_simulation.{json,md}` and the synthesised phase report
+`docs/reports/phase7_evaluation.{json,md}`.
+
+- **reflow never recovers more absolute money than `notify_all`, at any point in the band**
+  (pessimistic 96.1%, central 95.0%, optimistic 97.1% of `notify_all`'s rupees) -- reported as a
+  loss, not reframed, per this project's first governing principle.
+- **reflow always beats `do_nothing`**, at every point in the band, by a wide margin (roughly
+  2.1-3.5x `do_nothing`'s recovered rupees across the band).
+- **reflow sends 28.4-28.9% fewer contacts than `notify_all`, and 24.6% fewer than the more
+  realistic, single-shot `notify_all_once`, across the whole band**, while recovering 95-97% of
+  `notify_all`'s money and 98.2-98.8% of `notify_all_once`'s.
+- **reflow is cheaper per rupee recovered than both chase baselines at every point in the band**,
+  by a stable ~25-26% margin (contacts-per-rupee-recovered 0.000469 vs `notify_all`'s 0.000624 at
+  the central estimate).
+- **The cost of reflow's guardrails is measured, not just implied.** A one-off, read-only
+  counterfactual analysis (built from existing public `reflow` APIs for this ADR and
+  `docs/reports/phase7_evaluation.md`, not a change to `reflow.eval.simulate`) scored every
+  guardrail-blocked escalatable candidate action against the same payment attempt's same
+  deterministic oracle draw. At the central estimate, 1,552 of 9,992 guardrail-blocked events
+  (15.5%) would have recovered under the pre-guardrail action per the same oracle, and 1,487 of
+  44,674 orders (3.3%) never recovered by any other path as a result. This is named as the
+  concrete price of reflow's lower contact volume, not hidden inside an aggregate.
+
+**The closed loop closes the limitation ADR-0005 flagged**
+
+ADR-0005 built the escalation ladder (`reflow.policy.ladder.ladder_action`) and the attempt-cap
+guardrail to advance by `PaymentEvent.attempt_number` -- a ground-truth fact about the corpus's
+own retry-chain construction -- and said so as a stated limitation, not a hidden one: "this phase
+evaluates the policy offline, against a historical corpus the policy has never acted on -- there
+is no action history to count. `attempt_number` is the best available proxy... A production
+deployment should replace it with genuine decision history once one exists." `reflow.eval.simulate`
+is that replacement, arriving in the phase that finally has one. For every event evaluated under
+`PolicyName.REFLOW`, the simulation rebuilds it via `dataclasses.replace` with `attempt_number`
+overridden to *this order's own count of chase/escalate actions this simulation has actually
+decided so far*, before handing it to the unmodified `PolicyEngine.evaluate` -- **zero changes to
+`reflow.policy.engine`, `.guardrails`, `.ladder`, or `.decision`**, because ADR-0005's own
+parameterisation (accepting `attempt_number` as a plain input) was already correct; the gap was
+entirely in the caller, which now exists. The ladder and the attempt-cap guardrail therefore climb
+and cap against genuine decision history for the first time in this project, exactly as ADR-0005
+anticipated. One residual approximation remains, stated plainly rather than glossed over: this
+closed loop's "genuine decision history" starts fresh at the beginning of the simulated window for
+every order, since there is no real merchant history predating a corpus's first event to seed it
+with -- a real production deployment's first-ever day would have the identical cold start this
+simulation has throughout.
+
+**The model default is chosen on measured evidence, not credibility**
+
+`docs/reports/phase7_model_comparison.{json,md}` ran `deepseek/deepseek-v4-flash`,
+`google/gemini-3.7-flash`, and `openai/gpt-oss-20b` through the exact same
+`reflow.diagnose.ambiguous.AmbiguousReasonDiagnoser` production Tier 2 already uses, live, against
+6 ambiguous and 6 deterministic-check reason codes each (36 calls total, $0.021145 actual spend).
+The pre-committed rule (lowest total cost among zero-error models, tie-broken by latency) picks
+`deepseek/deepseek-v4-flash`: $0.000553 total against `google/gemini-3.7-flash`'s $0.019636 (about
+35x) and `openai/gpt-oss-20b`'s $0.000956, a perfect 100% first-attempt JSON validity rate (no
+truncated- or invalid-JSON retry ever fired, versus 91.7% and 66.7% for the other two), and
+perfect agreement with Tier 1's deterministic table on every sampled already-resolved reason code
+(all three models actually agreed 100% of the time here, independent corroboration that those
+reasons are genuinely unambiguous, not merely unambiguous to this project's own parser). This
+mechanical pick is also the holistic one: `deepseek/deepseek-v4-flash` is the only model of the
+three verified live to honour `reasoning_effort="none"` (`BUILD_LOG.md`, 2026-08-22/23), so its
+cost pays for a visible answer only, on a call site that is cached per reason code and never sits
+on a customer-facing latency path. **`deepseek/deepseek-v4-flash` is adopted as the shipped Tier 2
+default.** Reported honestly rather than smoothed over: deepseek had the *highest* mean latency of
+the three measured (20.3s, individual calls ranging 3.0-64.8s) despite reasoning being disabled --
+slower and far more variable than `google/gemini-3.7-flash`'s 6.7s mean despite that model's 3,136
+reasoning tokens of mandatory hidden work. This does not change the recommendation for a cached,
+non-latency-critical call site, but a future call site that is latency-sensitive should re-measure
+rather than assume cheap implies fast.
+
+**reflow loses on absolute money, and that is the right design, stated plainly**
+
+A system whose guardrails can refuse to act -- during quiet hours, below an amount floor, within
+a cooldown window, against a customer already contacted enough, while a rail is a known outage,
+against a duplicate or already-settled case -- will, on any oracle that gives an unsolicited chase
+message a positive (even if small) chance of independently helping, recover less absolute money
+than a policy that never refuses. `notify_all`'s absolute-money win is not a measurement error or
+an artefact of an unfair comparison; it is the mechanical, expected consequence of message volume
+correlating positively with recovered money in this oracle, and reflow spending fewer messages by
+design. The brief's own governing principle is that this project reports what the code actually
+does, not what would make the best headline -- so this ADR states outright that reflow is not the
+absolute-recovery-maximising policy among the four compared, and defends *why that is the correct
+system to ship anyway*: real customer contact has a cost this project's own guardrails exist to
+respect (compliance exposure from off-hours messaging, contact fatigue, spend on payments too
+small to justify recovery effort, messaging customers about a rail failure that is not their
+fault) that a pure rupees-recovered metric does not price in at all. `notify_all` is not a
+deployable policy; it is the naive baseline this project was asked to measure against, precisely
+so a reader can see what unbounded contact volume buys and at what implied contact cost.
+
+**Decision**
+
+The outcome oracle's two-parameter-per-class design, grounded in the already-existing
+`RemediationClass` taxonomy; the three-point, dual-quantity sensitivity band; the closed-loop
+`attempt_number` replacement that finally satisfies ADR-0005's stated limitation with zero changes
+to `reflow.policy`; and `deepseek/deepseek-v4-flash` as Tier 2's shipped default are all adopted
+as designed and measured above. reflow's headline claim is comparable recovery (95-97% of
+`notify_all`'s money, 98%+ of `notify_all_once`'s) at materially lower customer-contact cost
+(28%+ fewer contacts, ~25% cheaper per rupee recovered), robust across the full sensitivity band
+-- not a win on absolute rupees recovered, which it does not claim and does not achieve.
+
+**Alternatives considered and rejected**
+
+- **A hand-written action-by-class probability matrix (seven actions x ten classes, 70 cells).**
+  Rejected in favour of the two-parameter-per-class-plus-fit-scalar design: a 70-cell matrix would
+  need 70 individually justified numbers, most of which the vendored taxonomy gives no basis to
+  distinguish, which is exactly the kind of invented precision this project's culture exists to
+  avoid.
+- **A single point-estimate oracle, no sensitivity band.** Rejected: a single assumed probability
+  set would let one contested number carry the entire project's headline finding, with no way for
+  a reader to see how much of the conclusion depends on it. The band costs three simulation runs
+  instead of one and directly answers "does this hold if you doubt the uplift assumption by 40%
+  in either direction," which a point estimate cannot.
+- **Scaling only the uplift band, holding the no-action floor fixed.** Rejected: a band that only
+  widens the case *for* acting invites the fair challenge of why the floor alone was held immune
+  from the same scrutiny. Both bands move, at different, independently justified widths.
+- **A synthetic, simulation-internal action-history counter for the escalation ladder**, rather
+  than genuinely replaying decisions in chronological order per order. Rejected: a counter
+  maintained separately from the actual sequential decisions made would risk drifting from what
+  the policy actually did; walking each order's events in order and counting real decisions taken
+  so far is simpler, verifiably correct, and was already the design `reflow.eval.simulate`'s own
+  module docstring committed to before this ADR was written.
+- **Picking the model default on reputation or prior familiarity rather than measured evidence.**
+  Rejected, per ADR-0004's own deferred-decision framing and this project's second governing
+  principle: the default is picked from a live, reproducible comparison table
+  (`docs/reports/phase7_model_comparison.json`), with the losing candidates' numbers left visible,
+  not from which model sounds most credible.
+- **Reframing `notify_all`'s absolute-money win as a reflow win by changing the primary metric
+  after seeing the result.** Rejected outright, per this project's first governing principle. The
+  primary metric was money recovered before this simulation ran; it lost on that metric; that is
+  reported as the finding. The contacts-per-rupee and contact-reduction comparisons are reported
+  as genuinely separate, real advantages, not as a metric substituted in after the fact to avoid
+  reporting a loss.
+
+**Consequences**
+
+- A future phase deploying reflow against real Razorpay traffic replaces this oracle with actual
+  observed recovery outcomes the moment they exist, and should expect the *shape* of the finding
+  (comparable recovery, materially fewer contacts) to be a more meaningful thing to validate than
+  this simulation's exact percentages, which are only as good as the stated, disclosed assumption
+  behind them.
+- `deepseek/deepseek-v4-flash` remains Tier 2's default only until a future model is verified live
+  to also honour `reasoning_effort="none"` at a lower cost, or until a latency-sensitive call site
+  is added to Tier 2 that would make this ADR's latency finding decisive rather than incidental.
+- The guardrail opportunity-cost analysis in `docs/reports/phase7_evaluation.md` is a one-off
+  script built from existing public APIs, not a committed, tested module; a future phase that
+  wants this measurement on every run should promote it into `reflow.eval.simulate` proper with
+  its own tests, rather than re-deriving it ad hoc each time.
+- This decision is revisited if Razorpay's test mode ever exposes a genuine probabilistic outcome
+  surface (removing the need for this oracle entirely), or if a production deployment's real
+  contact-cost data (compliance fines, unsubscribe/complaint rates, measured contact fatigue)
+  becomes available to replace the qualitative case made here for why reflow's lower contact
+  volume is worth its absolute-money cost with a quantitative one.
